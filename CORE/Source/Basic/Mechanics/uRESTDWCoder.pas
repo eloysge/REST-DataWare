@@ -1,8 +1,5 @@
 unit uRESTDWCoder;
 
-interface
-
-{$I ..\..\Includes\uRESTDWPlataform.inc}
 {$I ..\..\Includes\uRESTDW.inc}
 
 {
@@ -25,6 +22,8 @@ interface
  Eloy                       - Devel.
  Roniery                    - Devel.
 }
+
+interface
 
 uses
   Classes, uRESTDWAbout, uRESTDWProtoTypes, uRESTDWTools;

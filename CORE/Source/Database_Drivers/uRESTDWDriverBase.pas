@@ -1,7 +1,6 @@
 ﻿unit uRESTDWDriverBase;
 
-{$I ..\..\Source\Includes\uRESTDWPlataform.inc}
-{$I ..\..\Source\Includes\uRESTDW.inc}
+{$I ..\Includes\uRESTDW.inc}
 
 {
   REST Dataware .
@@ -199,7 +198,7 @@ Type
   vCompression         : Boolean;
   vEncoding            : TEncodeSelect;
   vCommitRecords       : Integer;
-  {$IFDEF FPC}
+  {$IFDEF RESTDWLAZARUS}
    vDatabaseCharSet    : TDatabaseCharSet;
   {$ENDIF}
   vParamCreate         : Boolean;
@@ -257,7 +256,8 @@ Type
   Function compConnIsValid(comp : TComponent) : boolean; virtual;
   Function  getConectionType : TRESTDWDatabaseType; Virtual;
   Function  getDatabaseInfo  : TRESTDWDatabaseInfo; Virtual;
-  Function  getQuery         : TRESTDWDrvQuery;   Virtual;
+  Function  getQuery : TRESTDWDrvQuery; Overload; Virtual;
+  Function  getQuery(AUnidir : boolean) : TRESTDWDrvQuery; Overload; Virtual;
   Function  getTable         : TRESTDWDrvTable;   Virtual;
   Function  getStoreProc     : TRESTDWDrvStoreProc;   Virtual;
   Procedure Connect;                                Virtual;
@@ -403,7 +403,7 @@ Type
   Property EncodeStringsJSON   : Boolean              Read vEncodeStrings         Write vEncodeStrings;
   Property Encoding            : TEncodeSelect        Read vEncoding              Write vEncoding;
   Property ParamCreate         : Boolean              Read vParamCreate           Write vParamCreate;
-  {$IFDEF FPC}
+  {$IFDEF RESTDWLAZARUS}
   Property DatabaseCharSet     : TDatabaseCharSet     Read vDatabaseCharSet       Write vDatabaseCharSet;
   {$ENDIF}
   Property CommitRecords       : Integer              Read vCommitRecords         Write vCommitRecords;
@@ -511,16 +511,6 @@ var
 begin
   if DWParams = nil then
     Exit;
-
-{
-  // firebird funciona
-  // mssql nao funciona
-  try
-    Self.Prepare;
-  except
-
-  end;
-}
 
   for I := 0 To DWParams.Count -1 do begin
     if Self.ParamCount > I then begin
@@ -903,11 +893,11 @@ Begin
     SQL.Clear;
     SQL.Add('SELECT LAST_INSERT_ID() ID');
     Open;
-    {$IF NOT DEFINED(FPC) AND (CompilerVersion < 22)}
+    {$IFNDEF DELPHIXEUP}
       Result := Fields[0].AsInteger;
     {$ELSE}
       Result := Fields[0].AsLargeInt;
-    {$IFEND}
+    {$ENDIF}
    End;
  Except
   Result := -1;
@@ -916,12 +906,12 @@ End;
 
 { TRESTDWDriverBase }
 
-Function TRESTDWDriverBase.getConectionType : TRESTDWDatabaseType;
+function TRESTDWDriverBase.getConectionType : TRESTDWDatabaseType;
 Begin
  Result := dbtUndefined;
 End;
 
-Function TRESTDWDriverBase.getDatabaseInfo  : TRESTDWDatabaseInfo;
+function TRESTDWDriverBase.getDatabaseInfo : TRESTDWDatabaseInfo;
 Var
  connType : TRESTDWDatabaseType;
  qry      : TRESTDWDrvQuery;
@@ -1132,37 +1122,43 @@ Begin
  End;
 End;
 
-Function TRESTDWDriverBase.getQuery: TRESTDWDrvQuery;
+function TRESTDWDriverBase.getQuery : TRESTDWDrvQuery;
 Begin
  Result := Nil;
 End;
 
-Function TRESTDWDriverBase.getTable: TRESTDWDrvTable;
+function TRESTDWDriverBase.getQuery(AUnidir : boolean) : TRESTDWDrvQuery;
+begin
+ // implementada em alguns drivers
+ Result := getQuery();
+end;
+
+function TRESTDWDriverBase.getTable : TRESTDWDrvTable;
 Begin
  Result := Nil;
 End;
 
-Function TRESTDWDriverBase.getStoreProc : TRESTDWDrvStoreProc;
+function TRESTDWDriverBase.getStoreProc : TRESTDWDrvStoreProc;
 Begin
  Result := Nil;
 End;
 
-Function TRESTDWDriverBase.isConnected: boolean;
+function TRESTDWDriverBase.isConnected : Boolean;
 Begin
  Result := False;
 End;
 
-Function TRESTDWDriverBase.connInTransaction: boolean;
+function TRESTDWDriverBase.connInTransaction : Boolean;
 Begin
  Result := False;
 End;
 
-Procedure TRESTDWDriverBase.connStartTransaction;
+procedure TRESTDWDriverBase.connStartTransaction;
 Begin
 
 End;
 
-Procedure TRESTDWDriverBase.connRollback;
+procedure TRESTDWDriverBase.connRollback;
 Begin
 
 End;
@@ -1172,12 +1168,12 @@ begin
   Result := False;
 end;
 
-Procedure TRESTDWDriverBase.connCommit;
+procedure TRESTDWDriverBase.connCommit;
 Begin
 
 End;
 
-Function TRESTDWDriverBase.isMinimumVersion(major, minor, sub: integer): boolean;
+function TRESTDWDriverBase.isMinimumVersion(major, minor, sub : Integer) : Boolean;
 Var
  info : TRESTDWDatabaseInfo;
 Begin
@@ -1187,12 +1183,12 @@ Begin
            (info.rdwDatabaseMinorVersion >= sub);
 End;
 
-Function TRESTDWDriverBase.isMinimumVersion(major, minor: integer): boolean;
+function TRESTDWDriverBase.isMinimumVersion(major, minor : Integer) : Boolean;
 Begin
  Result := isMinimumVersion(major, minor, 0);
 End;
 
-Procedure TRESTDWDriverBase.setConnection(AValue: TComponent);
+procedure TRESTDWDriverBase.setConnection(AValue : TComponent);
 Begin
  If FConnection = AValue Then
   Exit;
@@ -1255,15 +1251,11 @@ begin
 
               if MassiveReplyValue <> nil then  begin
                 if vParam.RESTDWDataTypeParam in [dwftLongWord,dwftLargeint] then
-                  {$IFNDEF FPC}
-                    {$IF CompilerVersion >= 21}
-                      vParam.AsLargeInt := StrToInt64(MassiveReplyValue.NewValue)
-                    {$ELSE}
-                      vParam.AsInteger := StrToInt64(MassiveReplyValue.NewValue)
-                    {$IFEND}
+                  {$IF Defined(RESTDWLAZARUS) or Defined(DELPHIXEUP)}
+                  vParam.AsLargeInt := StrToInt64(MassiveReplyValue.NewValue)
                   {$ELSE}
-                    vParam.AsLargeInt := StrToInt64(MassiveReplyValue.NewValue)
-                  {$ENDIF}
+                  vParam.AsInteger := StrToInt64(MassiveReplyValue.NewValue)
+                  {$IFEND}
                 else if vParam.DataType = ftSmallInt then
                   vParam.AsSmallInt := StrToInt(MassiveReplyValue.NewValue)
                 else
@@ -1388,7 +1380,7 @@ begin
   end;
 end;
 
-Procedure TRESTDWDriverBase.Connect;
+procedure TRESTDWDriverBase.Connect;
 Begin
 
 End;
@@ -1399,19 +1391,17 @@ begin
   inherited;
 end;
 
-Procedure TRESTDWDriverBase.Disconect;
+procedure TRESTDWDriverBase.Disconect;
 Begin
 
 End;
 
-Function TRESTDWDriverBase.ConnectionSet: Boolean;
+function TRESTDWDriverBase.ConnectionSet : Boolean;
 Begin
  Result := Assigned(FConnection);
 End;
 
-Function TRESTDWDriverBase.GetGenID(Query   : TRESTDWDrvQuery;
-                                    GenName : String;
-                                    valor   : Integer) : Integer;
+function TRESTDWDriverBase.GetGenID(Query : TRESTDWDrvQuery; GenName : String; valor : Integer) : Integer;
 Var
  connType : TRESTDWDatabaseType;
 Begin
@@ -1476,8 +1466,7 @@ Begin
   End;
 End;
 
-Function TRESTDWDriverBase.GetGenID(GenName : String;
-                                    valor   : Integer) : Integer;
+function TRESTDWDriverBase.GetGenID(GenName : String; valor : Integer) : Integer;
 Var
  qry : TRESTDWDrvQuery;
 Begin
@@ -1489,12 +1478,7 @@ Begin
  End;
 End;
 
-Function TRESTDWDriverBase.ApplyUpdates(MassiveStream    : TStream;
-                                        SQL              : String;
-                                        Params           : TRESTDWParams;
-                                        var Error        : Boolean;
-                                        var MessageError : String;
-                                        var RowsAffected : Integer) : TJSONValue;
+function TRESTDWDriverBase.ApplyUpdates(MassiveStream : TStream; SQL : String; Params : TRESTDWParams; var Error : Boolean; var MessageError : String; var RowsAffected : Integer) : TJSONValue;
 Var
  MassiveDataset : TMassiveDatasetBuffer;
 Begin
@@ -1508,12 +1492,7 @@ Begin
 End;
 
 
-Function TRESTDWDriverBase.ApplyUpdates(Massive,
-                                        SQL              : String;
-                                        Params           : TRESTDWParams;
-                                        Var Error        : Boolean;
-                                        Var MessageError : String;
-                                        Var RowsAffected : Integer): TJSONValue;
+function TRESTDWDriverBase.ApplyUpdates(Massive, SQL : String; Params : TRESTDWParams; var Error : Boolean; var MessageError : String; var RowsAffected : Integer) : TJSONValue;
 Var
  MassiveDataset : TMassiveDatasetBuffer;
 Begin
@@ -1526,12 +1505,7 @@ Begin
  End;
 End;
 
-Function TRESTDWDriverBase.ApplyUpdatesTB(MassiveStream    : TStream;
-                                          SQL              : String;
-                                          Params           : TRESTDWParams;
-                                          Var Error        : Boolean;
-                                          Var MessageError : String;
-                                          Var RowsAffected : Integer): TJSONValue;
+function TRESTDWDriverBase.ApplyUpdatesTB(MassiveStream : TStream; SQL : String; Params : TRESTDWParams; var Error : Boolean; var MessageError : String; var RowsAffected : Integer) : TJSONValue;
 Var
   vTempQuery         : TRESTDWDrvTable;
   vResultReflection  : String;
@@ -1656,7 +1630,7 @@ Var
     end;
   end;
 Begin
-  {$IFNDEF FPC} Inherited; {$ENDIF}
+  {$IFNDEF RESTDWLAZARUS} Inherited; {$ENDIF}
   Try
     Result := Nil;
     Error := False;
@@ -1683,7 +1657,7 @@ Begin
             Result := TJSONValue.Create;
           Result.Encoding := Encoding;
           Result.Encoded := EncodeStringsJSON;
-          {$IFDEF FPC}
+          {$IFDEF RESTDWLAZARUS}
           Result.DatabaseCharSet := DatabaseCharSet;
           {$ENDIF}
           Result.Utf8SpecialChars := True;
@@ -1697,7 +1671,7 @@ Begin
               If Result = Nil Then
                 Result := TJSONValue.Create;
               Result.Encoded := True;
-              {$IFDEF FPC}
+              {$IFDEF RESTDWLAZARUS}
               Result.DatabaseCharSet := DatabaseCharSet;
               {$ENDIF}
               Result.SetValue(GetPairJSONStr('NOK', MessageError));
@@ -1712,7 +1686,7 @@ Begin
           Result := TJSONValue.Create;
         Result.Encoding := Encoding;
         Result.Encoded := EncodeStringsJSON;
-        {$IFDEF FPC}
+        {$IFDEF RESTDWLAZARUS}
           Result.DatabaseCharSet := DatabaseCharSet;
         {$ENDIF}
         Result.SetValue('[' + vResultReflection + ']');
@@ -1846,7 +1820,7 @@ var
     end;
   end;
 begin
- {$IFNDEF FPC}inherited;{$ENDIF}
+ {$IFNDEF RESTDWLAZARUS}inherited;{$ENDIF}
   try
     Result := nil;
     Error := False;
@@ -1910,11 +1884,7 @@ begin
   end;
 end;
 
-Function TRESTDWDriverBase.ApplyUpdatesTB(Massive          : String;
-                                          Params           : TRESTDWParams;
-                                          var Error        : Boolean;
-                                          var MessageError : String;
-                                          var RowsAffected : Integer): TJSONValue;
+function TRESTDWDriverBase.ApplyUpdatesTB(Massive : String; Params : TRESTDWParams; var Error : Boolean; var MessageError : String; var RowsAffected : Integer) : TJSONValue;
 var
   vTempQuery: TRESTDWDrvTable;
   vResultReflection : string;
@@ -2038,7 +2008,7 @@ var
     end;
   end;
 begin
-  {$IFNDEF FPC}inherited;{$ENDIF}
+  {$IFNDEF RESTDWLAZARUS}inherited;{$ENDIF}
   try
     Result := nil;
     Error := False;
@@ -2061,7 +2031,7 @@ begin
             Result := TJSONValue.Create;
           Result.Encoding := Encoding;
           Result.Encoded := EncodeStringsJSON;
-          {$IFDEF FPC}
+          {$IFDEF RESTDWLAZARUS}
             Result.DatabaseCharSet := DatabaseCharSet;
           {$ENDIF}
           Result.Utf8SpecialChars := True;
@@ -2075,7 +2045,7 @@ begin
               if Result = nil then
                 Result := TJSONValue.Create;
               Result.Encoded := True;
-              {$IFDEF FPC}
+              {$IFDEF RESTDWLAZARUS}
                 Result.DatabaseCharSet := DatabaseCharSet;
               {$ENDIF}
               Result.SetValue(GetPairJSONStr('NOK', MessageError));
@@ -2090,7 +2060,7 @@ begin
           Result := TJSONValue.Create;
         Result.Encoding := Encoding;
         Result.Encoded := EncodeStringsJSON;
-        {$IFDEF FPC}
+        {$IFDEF RESTDWLAZARUS}
           Result.DatabaseCharSet := DatabaseCharSet;
         {$ENDIF}
         Result.SetValue('[' + vResultReflection + ']');
@@ -2105,9 +2075,7 @@ begin
   end;
 end;
 
-Function TRESTDWDriverBase.ApplyUpdates_MassiveCache  (MassiveStream         : TStream;
-                                                       Var Error             : Boolean;
-                                                       Var MessageError      : String) : TJSONValue;
+function TRESTDWDriverBase.ApplyUpdates_MassiveCache(MassiveStream : TStream; var Error : Boolean; var MessageError : String) : TJSONValue;
 Var
  MassiveDataset : TMassiveDatasetBuffer;
  aMassive       : TStream;
@@ -2182,9 +2150,7 @@ Begin
  End;
 End;
 
-Function TRESTDWDriverBase.ApplyUpdates_MassiveCache  (MassiveDataset   : TMassiveDatasetBuffer;
-                                                       Var Error        : Boolean;
-                                                       Var MessageError : String): String;
+function TRESTDWDriverBase.ApplyUpdates_MassiveCache(MassiveDataset : TMassiveDatasetBuffer; var Error : Boolean; var MessageError : String) : String;
 var
  vTempQuery        : TRESTDWDrvQuery;
  vStateResource,
@@ -2267,7 +2233,7 @@ var
   End;
  End;
 Begin
- {$IFNDEF FPC}inherited;{$ENDIF}
+ {$IFNDEF RESTDWLAZARUS}inherited;{$ENDIF}
   vResultReflection := '';
   Result := '';
   try
@@ -2293,9 +2259,7 @@ Begin
   End;
 end;
 
-Function TRESTDWDriverBase.ApplyUpdates_MassiveCache  (MassiveCache     : String;
-                                                       Var Error        : Boolean;
-                                                       Var MessageError : String): TJSONValue;
+function TRESTDWDriverBase.ApplyUpdates_MassiveCache(MassiveCache : String; var Error : Boolean; var MessageError : String) : TJSONValue;
 var
   vTempQuery: TRESTDWDrvQuery;
   vStateResource, vMassiveLine: boolean;
@@ -2408,7 +2372,7 @@ var
   end;
 
 begin
- {$IFNDEF FPC}inherited;{$ENDIF}
+ {$IFNDEF RESTDWLAZARUS}inherited;{$ENDIF}
   vResultReflection := '';
   Result := nil;
   try
@@ -2439,23 +2403,17 @@ begin
   end;
 end;
 
-Function TRESTDWDriverBase.ApplyUpdates_MassiveCacheTB(MassiveStream         : TStream;
-                                                       Var Error             : Boolean;
-                                                       Var MessageError      : String) : TJSONValue;
+function TRESTDWDriverBase.ApplyUpdates_MassiveCacheTB(MassiveStream : TStream; var Error : Boolean; var MessageError : String) : TJSONValue;
 Begin
 
 End;
 
-Function TRESTDWDriverBase.ApplyUpdates_MassiveCacheTB(MassiveCache     : String;
-                                                       Var Error        : Boolean;
-                                                       Var MessageError : String): TJSONValue;
+function TRESTDWDriverBase.ApplyUpdates_MassiveCacheTB(MassiveCache : String; var Error : Boolean; var MessageError : String) : TJSONValue;
 Begin
 
 End;
 
-Function TRESTDWDriverBase.ProcessMassiveSQLCache(MassiveSQLCache: String;
-                                                  var Error: Boolean;
-                                                  var MessageError: String): TJSONValue;
+function TRESTDWDriverBase.ProcessMassiveSQLCache(MassiveSQLCache : String; var Error : Boolean; var MessageError : String) : TJSONValue;
 Var
  vTempQuery        : TRESTDWDrvQuery;
  vStateResource    : Boolean;
@@ -2487,8 +2445,8 @@ Var
      vDWParams.Encoding := Encoding;
      Try
       vMassiveSQLMode := MassiveSQLMode(TRESTDWJSONInterfaceObject(bJsonValueB).pairs[0].Value);
-      vSQL            := StringReplace(DecodeStrings(TRESTDWJSONInterfaceObject(bJsonValueB).pairs[1].Value{$IFDEF FPC}, csUndefined{$ENDIF}), #$B, ' ', [rfReplaceAll]);
-      vParamsString   := DecodeStrings(TRESTDWJSONInterfaceObject(bJsonValueB).pairs[2].Value{$IFDEF FPC}, csUndefined{$ENDIF});
+      vSQL            := StringReplace(DecodeStrings(TRESTDWJSONInterfaceObject(bJsonValueB).pairs[1].Value{$IFDEF RESTDWLAZARUS}, csUndefined{$ENDIF}), #$B, ' ', [rfReplaceAll]);
+      vParamsString   := DecodeStrings(TRESTDWJSONInterfaceObject(bJsonValueB).pairs[2].Value{$IFDEF RESTDWLAZARUS}, csUndefined{$ENDIF});
       vBookmark       := TRESTDWJSONInterfaceObject(bJsonValueB).pairs[3].Value;
       vBinaryRequest  := StringToBoolean(TRESTDWJSONInterfaceObject(bJsonValueB).pairs[4].Value);
 
@@ -2530,7 +2488,7 @@ Var
   End;
  End;
 Begin
-  {$IFNDEF FPC}Inherited;{$ENDIF}
+  {$IFNDEF RESTDWLAZARUS}Inherited;{$ENDIF}
   vResultReflection := '';
   Result     := Nil;
   Try
@@ -2559,41 +2517,26 @@ Begin
   End;
 end;
 
-Function TRESTDWDriverBase.ExecuteCommand(SQL                   : String;
-                                          Var Error             : Boolean;
-                                          Var MessageError      : String;
-                                          Var BinaryBlob        : TMemoryStream;
-                                          Var RowsAffected      : Integer;
-                                          Execute               : Boolean = False;
-                                          BinaryEvent           : Boolean = False;
-                                          MetaData              : Boolean = False;
-                                          BinaryCompatibleMode  : Boolean = False) : String;
+function TRESTDWDriverBase.ExecuteCommand(
+  SQL : String; var Error : Boolean; var MessageError : String; var BinaryBlob : TMemoryStream; var RowsAffected : Integer; Execute : Boolean; BinaryEvent : Boolean; MetaData : Boolean; BinaryCompatibleMode : Boolean) : String;
 Begin
  Result := ExecuteCommand(SQL, Nil, Error, MessageError, BinaryBlob, RowsAffected,
                           Execute, BinaryEvent, MetaData, BinaryCompatibleMode);
 End;
 
-Function TRESTDWDriverBase.ExecuteCommand(SQL                   : String;
-                                          Params                : TRESTDWParams;
-                                          Var Error             : Boolean;
-                                          Var MessageError      : String;
-                                          Var BinaryBlob        : TMemoryStream;
-                                          Var RowsAffected      : Integer;
-                                          Execute               : Boolean = False;
-                                          BinaryEvent           : Boolean = False;
-                                          MetaData              : Boolean = False;
-                                          BinaryCompatibleMode  : Boolean = False): String;
+function TRESTDWDriverBase.ExecuteCommand(
+  SQL : String; Params : TRESTDWParams; var Error : Boolean; var MessageError : String; var BinaryBlob : TMemoryStream; var RowsAffected : Integer; Execute : Boolean; BinaryEvent : Boolean; MetaData : Boolean; BinaryCompatibleMode : Boolean) : String;
 var
   vTempQuery: TRESTDWDrvQuery;
   vDataSet: TDataSet;
   vStateResource: boolean;
   aResult: TJSONValue;
 begin
- {$IFNDEF FPC}inherited;{$ENDIF}
+ {$IFNDEF RESTDWLAZARUS}inherited;{$ENDIF}
   Error := False;
   Result := '';
   aResult := TJSONValue.Create;
-  vTempQuery := getQuery;
+  vTempQuery := getQuery(not Execute);
   vDataSet := TDataSet(vTempQuery.Owner);
   try
     vStateResource := isConnected;
@@ -2610,11 +2553,13 @@ begin
       if Assigned(Self.OnQueryBeforeOpen) then
         Self.OnQueryBeforeOpen(vDataSet, Params);
        vTempQuery.Open;
-       vTempQuery.FetchAll;
+
       if connInTransaction then
         connCommit;
+
       if aResult = nil then
         aResult := TJSONValue.Create;
+
       aResult.Encoding := Encoding;
       try
 
@@ -2691,34 +2636,22 @@ begin
   FreeAndNil(vTempQuery);
 end;
 
-Function TRESTDWDriverBase.ExecuteCommandTB(Tablename: String;
-                                            var Error: Boolean;
-                                            var MessageError: String;
-                                            var BinaryBlob: TMemoryStream;
-                                            var RowsAffected: Integer;
-                                            BinaryEvent: Boolean;
-                                            MetaData: Boolean;
-                                            BinaryCompatibleMode: Boolean): String;
+function TRESTDWDriverBase.ExecuteCommandTB(
+  Tablename : String; var Error : Boolean; var MessageError : String; var BinaryBlob : TMemoryStream; var RowsAffected : Integer; BinaryEvent : Boolean; MetaData : Boolean; BinaryCompatibleMode : Boolean) : String;
 begin
   ExecuteCommandTB(Tablename,nil,Error,MessageError,BinaryBlob,RowsAffected,
                    BinaryEvent,MetaData,BinaryCompatibleMode);
 end;
 
-Function TRESTDWDriverBase.ExecuteCommandTB(Tablename: String;
-                                            Params: TRESTDWParams;
-                                            var Error: Boolean;
-                                            var MessageError: String;
-                                            var BinaryBlob: TMemoryStream;
-                                            var RowsAffected: Integer;
-                                            BinaryEvent: Boolean; MetaData: Boolean;
-                                            BinaryCompatibleMode: Boolean): String;
+function TRESTDWDriverBase.ExecuteCommandTB(
+  Tablename : String; Params : TRESTDWParams; var Error : Boolean; var MessageError : String; var BinaryBlob : TMemoryStream; var RowsAffected : Integer; BinaryEvent : Boolean; MetaData : Boolean; BinaryCompatibleMode : Boolean) : String;
 var
   vTempQuery     : TRESTDWDrvTable;
   vDataset       : TDataset;
   aResult        : TJSONValue;
   vStateResource : Boolean;
 begin
-  {$IFNDEF FPC}Inherited;{$ENDIF}
+  {$IFNDEF RESTDWLAZARUS}Inherited;{$ENDIF}
   Error  := False;
   aResult := TJSONValue.Create;
   vTempQuery := getTable;
@@ -2739,7 +2672,7 @@ begin
 
     aResult.Encoded         := EncodeStringsJSON;
     aResult.Encoding        := Encoding;
-    {$IFDEF FPC}
+    {$IFDEF RESTDWLAZARUS}
       aResult.DatabaseCharSet := DatabaseCharSet;
     {$ENDIF}
     try
@@ -2788,7 +2721,7 @@ begin
 
         aResult.Encoded         := True;
         aResult.Encoding        := Encoding;
-        {$IFDEF FPC}
+        {$IFDEF RESTDWLAZARUS}
           aResult.DatabaseCharSet := DatabaseCharSet;
         {$ENDIF}
         aResult.SetValue(GetPairJSONStr('NOK', MessageError));
@@ -2807,15 +2740,12 @@ begin
  vTempQuery.Free;
 end;
 
-Procedure TRESTDWDriverBase.ExecuteProcedure(ProcName         : String;
-                                             Params           : TRESTDWParams;
-                                             Var Error        : Boolean;
-                                             Var MessageError : String);
+procedure TRESTDWDriverBase.ExecuteProcedure(ProcName : String; Params : TRESTDWParams; var Error : Boolean; var MessageError : String);
 Var
  vStateResource  : Boolean;
  vTempStoredProc : TRESTDWDrvStoreProc;
 Begin
- {$IFNDEF FPC}Inherited;{$ENDIF}
+ {$IFNDEF RESTDWLAZARUS}Inherited;{$ENDIF}
   Error  := False;
 
   vStateResource := isConnected;
@@ -2855,16 +2785,12 @@ Begin
   end;
 end;
 
-Procedure TRESTDWDriverBase.ExecuteProcedurePure(ProcName         : String;
-                                                 Var Error        : Boolean;
-                                                 Var MessageError : String);
+procedure TRESTDWDriverBase.ExecuteProcedurePure(ProcName : String; var Error : Boolean; var MessageError : String);
 Begin
  ExecuteProcedure(ProcName, nil, Error, MessageError);
 End;
 
-Procedure TRESTDWDriverBase.GetTableNames(Var TableNames   : TStringList;
-                                          Var Error        : Boolean;
-                                          Var MessageError : String);
+procedure TRESTDWDriverBase.GetTableNames(var TableNames : TStringList; var Error : Boolean; var MessageError : String);
 Var
  vStateResource : Boolean;
  connType : TRESTDWDatabaseType;
@@ -2960,10 +2886,7 @@ Begin
  End;
 End;
 
-Procedure TRESTDWDriverBase.GetFieldNames(TableName        : String;
-                                          Var FieldNames   : TStringList;
-                                          Var Error        : Boolean;
-                                          Var MessageError : String);
+procedure TRESTDWDriverBase.GetFieldNames(TableName : String; var FieldNames : TStringList; var Error : Boolean; var MessageError : String);
 Var
  vStateResource : Boolean;
  connType       : TRESTDWDatabaseType;
@@ -3061,10 +2984,7 @@ Begin
  End;
 end;
 
-Procedure TRESTDWDriverBase.GetKeyFieldNames(TableName        : String;
-                                             Var FieldNames   : TStringList;
-                                             Var Error        : Boolean;
-                                             Var MessageError : String);
+procedure TRESTDWDriverBase.GetKeyFieldNames(TableName : String; var FieldNames : TStringList; var Error : Boolean; var MessageError : String);
 Var
  vStateResource : Boolean;
  connType       : TRESTDWDatabaseType;
@@ -3225,9 +3145,7 @@ Begin
  End;
 End;
 
-Procedure TRESTDWDriverBase.GetProcNames(Var ProcNames    : TStringList;
-                                         Var Error        : Boolean;
-                                         Var MessageError : String);
+procedure TRESTDWDriverBase.GetProcNames(var ProcNames : TStringList; var Error : Boolean; var MessageError : String);
 Var
  vStateResource : Boolean;
  connType       : TRESTDWDatabaseType;
@@ -3309,10 +3227,7 @@ Begin
  End;
 End;
 
-Procedure TRESTDWDriverBase.GetProcParams(ProcName         : String;
-                                          Var ParamNames   : TStringList;
-                                          Var Error        : Boolean;
-                                          Var MessageError : String);
+procedure TRESTDWDriverBase.GetProcParams(ProcName : String; var ParamNames : TStringList; var Error : Boolean; var MessageError : String);
 Var
  vStateResource : Boolean;
  connType       : TRESTDWDatabaseType;
@@ -3658,17 +3573,12 @@ Begin
  End;
 End;
 
-Function TRESTDWDriverBase.InsertMySQLReturnID(SQL              : String;
-                                               Var Error        : Boolean;
-                                               Var MessageError : String) : Integer;
+function TRESTDWDriverBase.InsertMySQLReturnID(SQL : String; var Error : Boolean; var MessageError : String) : Integer;
 Begin
  Result := InsertMySQLReturnID(SQL, Nil, Error, MessageError);
 End;
 
-Function TRESTDWDriverBase.InsertMySQLReturnID(SQL              : String;
-                                               Params           : TRESTDWParams;
-                                               var Error        : Boolean;
-                                               var MessageError : String) : Integer;
+function TRESTDWDriverBase.InsertMySQLReturnID(SQL : String; Params : TRESTDWParams; var Error : Boolean; var MessageError : String) : Integer;
 Var
  vTempQuery     : TRESTDWDrvQuery;
  vStateResource : Boolean;
@@ -3716,10 +3626,7 @@ Begin
  FreeAndNil(vTempQuery);
 End;
 
-Function TRESTDWDriverBase.OpenDatasets(DatasetsLine     : String;
-                                        var Error        : Boolean;
-                                        var MessageError : String;
-                                        var BinaryBlob   : TMemoryStream): TJSONValue;
+function TRESTDWDriverBase.OpenDatasets(DatasetsLine : String; var Error : Boolean; var MessageError : String; var BinaryBlob : TMemoryStream) : TJSONValue;
 Var
  vTempQuery      : TRESTDWDrvQuery;
  vTempJSON       : TJSONValue;
@@ -3734,13 +3641,13 @@ Var
  bJsonValue      : TRESTDWJSONInterfaceObject;
  vStream         : TMemoryStream;
 Begin
- {$IFNDEF FPC}Inherited;{$ENDIF}
+ {$IFNDEF RESTDWLAZARUS}Inherited;{$ENDIF}
  Error           := False;
  vBinaryEvent    := False;
  vMetaData       := False;
  vCompatibleMode := False;
  bJsonArray      := Nil;
- vTempQuery      := getQuery;
+ vTempQuery      := getQuery(True);
  Try
   vStateResource := isConnected;
   If Not vStateResource Then
@@ -3753,7 +3660,7 @@ Begin
     bJsonArray  := bJsonValue.OpenArray(I);
     vTempQuery.Close;
     vTempQuery.SQL.Clear;
-    vTempQuery.SQL.Add(DecodeStrings(TRESTDWJSONInterfaceObject(bJsonArray).Pairs[0].Value{$IFDEF FPC}, csUndefined{$ENDIF}));
+    vTempQuery.SQL.Add(DecodeStrings(TRESTDWJSONInterfaceObject(bJsonArray).Pairs[0].Value{$IFDEF RESTDWLAZARUS}, csUndefined{$ENDIF}));
     vBinaryEvent    := StringToBoolean(TRESTDWJSONInterfaceObject(bJsonArray).Pairs[2].Value);
     vMetaData       := StringToBoolean(TRESTDWJSONInterfaceObject(bJsonArray).Pairs[3].Value);
     vCompatibleMode := StringToBoolean(TRESTDWJSONInterfaceObject(bJsonArray).Pairs[4].Value);
@@ -3761,7 +3668,7 @@ Begin
      Begin
       DWParams := TRESTDWParams.Create;
       Try
-       DWParams.FromJSON(DecodeStrings(TRESTDWJSONInterfaceObject(bJsonArray).Pairs[1].Value{$IFDEF FPC}, csUndefined{$ENDIF}));
+       DWParams.FromJSON(DecodeStrings(TRESTDWJSONInterfaceObject(bJsonArray).Pairs[1].Value{$IFDEF RESTDWLAZARUS}, csUndefined{$ENDIF}));
        vTempQuery.ImportParams(DWParams);
       Finally
        DWParams.Free;
@@ -3847,12 +3754,8 @@ Begin
   FreeAndNil(bJsonValue);
 End;
 
-Function TRESTDWDriverBase.OpenDatasets(DatapackStream        : TStream;
-                                        Var Error             : Boolean;
-                                        Var MessageError      : String;
-                                        Var BinaryBlob        : TMemoryStream;
-                                        aBinaryEvent          : Boolean;
-                                        aBinaryCompatibleMode : Boolean): TStream;
+function TRESTDWDriverBase.OpenDatasets(
+  DatapackStream : TStream; var Error : Boolean; var MessageError : String; var BinaryBlob : TMemoryStream; aBinaryEvent : Boolean; aBinaryCompatibleMode : Boolean) : TStream;
 Var
  X               : Integer;
  vTempQuery      : TRESTDWDrvQuery;
@@ -3866,12 +3769,12 @@ Var
  vBufferStream,
  vParamsStream   : TStream;
 Begin
- {$IFNDEF FPC}Inherited;{$ENDIF}
+ {$IFNDEF RESTDWLAZARUS}Inherited;{$ENDIF}
  Result          := Nil;
  Error           := False;
  BufferInStream  := TRESTDWBufferBase.Create;
  BufferOutStream := TRESTDWBufferBase.Create;
- vTempQuery      := getQuery;
+ vTempQuery      := getQuery(True);
  Try
   BufferInStream.LoadToStream(DatapackStream);
   vStateResource := isConnected;
@@ -3946,7 +3849,7 @@ constructor TRESTDWDriverBase.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
   vEncodeStrings       := True;
-  {$IFDEF FPC}
+  {$IFDEF RESTDWLAZARUS}
     vDatabaseCharSet   := csUndefined;
   {$ENDIF}
   vCommitRecords       := 100;
@@ -3970,15 +3873,14 @@ begin
     FServerMethod := TServerMethodDataModule(Self.Owner);
 end;
 
-Class Procedure TRESTDWDriverBase.CreateConnection(Const AConnectionDefs : TConnectionDefs;
-                                                   Var AConnection       : TComponent);
+class procedure TRESTDWDriverBase.CreateConnection(const AConnectionDefs : TConnectionDefs; var AConnection : TComponent);
 Begin
  If (Not Assigned(AConnection))     Or
     (Not Assigned(AConnectionDefs)) Then
   Exit;
 End;
 
-Procedure TRESTDWDriverBase.PrepareConnection(Var AConnectionDefs : TConnectionDefs);
+procedure TRESTDWDriverBase.PrepareConnection(var AConnectionDefs : TConnectionDefs);
 Begin
  If Assigned(OnPrepareConnection) Then
   OnPrepareConnection(AConnectionDefs);
@@ -4461,9 +4363,7 @@ begin
   end;
 end;
 
-Procedure TRESTDWDriverBase.BuildDatasetLine(var Query: TRESTDWDrvDataset;
-                                             Massivedataset: TMassivedatasetBuffer;
-                                             MassiveCache: Boolean);
+procedure TRESTDWDriverBase.BuildDatasetLine(var Query : TRESTDWDrvDataset; Massivedataset : TMassivedatasetBuffer; MassiveCache : Boolean);
 Var
  I, A              : Integer;
  vMasterField,
@@ -4564,14 +4464,10 @@ Begin
         End;
        If MassiveField.IsNull Then
         Continue;
-       If Query.FieldByName(MassiveField.FieldName).DataType in [{$IFNDEF FPC}{$if CompilerVersion > 21} // Delphi 2010 pra baixo
-                                                                 ftFixedChar, ftFixedWideChar,{$IFEND}{$ENDIF}
-                                                                 ftString,    ftWideString,
-                                                                 ftMemo, ftFmtMemo {$IFNDEF FPC}
-                                                                         {$IF CompilerVersion > 21}
-                                                                                 , ftWideMemo
-                                                                          {$IFEND}
-                                                                         {$ENDIF}]    Then
+       If Query.FieldByName(MassiveField.FieldName).DataType
+          in [{$IFDEF DELPHIXEUP}ftFixedChar, ftFixedWideChar,{$ENDIF}
+              ftString, ftWideString, ftMemo, ftFmtMemo
+              {$IFDEF DELPHIXEUP}, ftWideMemo{$ENDIF}] Then
         Begin
          If (vTempValue <> Null) And (vTempValue <> '') And
             (Trim(vTempValue) <> 'null') Then
@@ -4594,7 +4490,9 @@ Begin
            Else
             Query.FieldByName(MassiveField.FieldName).Clear;
           End
-         Else If Query.FieldByName(MassiveField.FieldName).DataType in [ftInteger, ftSmallInt, ftWord, {$IFNDEF FPC}{$IF CompilerVersion > 21}ftLongWord, {$IFEND}{$ENDIF} ftLargeint] Then
+         Else If Query.FieldByName(MassiveField.FieldName).DataType
+                 in [ftInteger, ftSmallInt, ftWord,
+                    {$IFDEF DELPHIXEUP}ftLongWord,{$ENDIF} ftLargeint] Then
           Begin
            If Lowercase(Query.FieldByName(MassiveField.FieldName).FieldName) = Lowercase(Massivedataset.SequenceField) Then
             Continue;
@@ -4603,17 +4501,14 @@ Begin
             Begin
              If vTempValue <> Null Then
               Begin
-               If Query.FieldByName(MassiveField.FieldName).DataType in [{$IFNDEF FPC}{$IF CompilerVersion > 21}ftLongWord, {$IFEND}{$ENDIF}ftLargeint] Then
+               If Query.FieldByName(MassiveField.FieldName).DataType
+                  in [{$IFDEF DELPHIXEUP}ftLongWord,{$ENDIF}ftLargeint] Then
                 Begin
-                 {$IFNDEF FPC}
-                  {$IF CompilerVersion > 21}
-                    Query.FieldByName(MassiveField.FieldName).AsLargeInt := StrToInt64(vTempValue);
+                  {$IF Defined(RESTDWLAZARUS) or Defined(DELPHIXEUP)}
+                  Query.FieldByName(MassiveField.FieldName).AsLargeInt := StrToInt64(vTempValue);
                   {$ELSE}
-                    Query.FieldByName(MassiveField.FieldName).AsInteger := StrToInt64(vTempValue);
+                  Query.FieldByName(MassiveField.FieldName).AsInteger := StrToInt64(vTempValue);
                   {$IFEND}
-                 {$ELSE}
-                   Query.FieldByName(MassiveField.FieldName).AsLargeInt := StrToInt64(vTempValue);
-                 {$ENDIF}
                 End
                Else
                 Query.FieldByName(MassiveField.FieldName).AsInteger  := StrToInt(vTempValue);
@@ -4682,11 +4577,6 @@ Begin
           Query.Fields[I].Value := A;
          If Not MassiveDataset.ReflectChanges Then
           Continue;
-//         Else
-//          Begin
-//           MassiveDataset.Fields.FieldByName(Query.Fields[I].FieldName).Value := A;
-//           MassiveDataset.Fields.FieldByName(Query.Fields[I].FieldName).FieldType := ovInteger;
-//          End;
         End
        Else If (MassiveDataset.Fields.FieldByName(Query.Fields[I].FieldName).isNull) Or
                (MassiveDataset.Fields.FieldByName(Query.Fields[I].FieldName).ReadOnly) Then
@@ -4778,14 +4668,10 @@ Begin
         End;
        If MassiveDataset.Fields.FieldByName(Query.Fields[I].FieldName).IsNull Then
         Continue;
-       If Query.Fields[I].DataType in [{$IFNDEF FPC}{$if CompilerVersion > 21} // Delphi 2010 pra baixo
-                             ftFixedChar, ftFixedWideChar,{$IFEND}{$ENDIF}
-                             ftString,    ftWideString,
-                             ftMemo, ftFmtMemo {$IFNDEF FPC}
-                                     {$IF CompilerVersion > 21}
-                                      , ftWideMemo
-                                     {$IFEND}
-                                    {$ENDIF}]    Then
+       If Query.Fields[I].DataType in [{$IFDEF DELPHIXEUP}ftFixedChar, ftFixedWideChar,{$ENDIF}
+                                       ftString, ftWideString, ftMemo, ftFmtMemo
+                                       {$IFDEF DELPHIXEUP}, ftWideMemo{$ENDIF}]
+                                       Then
         Begin
          If (vTempValue <> Null) And
             (Trim(vTempValue) <> 'null') Then
@@ -4808,7 +4694,9 @@ Begin
            Else
             Query.Fields[I].Clear;
           End
-         Else If Query.Fields[I].DataType in [ftInteger, ftSmallInt, ftWord, {$IFNDEF FPC}{$IF CompilerVersion > 21}ftLongWord, {$IFEND}{$ENDIF} ftLargeint] Then
+         Else If Query.Fields[I].DataType in [ftInteger, ftSmallInt, ftWord,
+                                              {$IFDEF DELPHIXEUP}ftLongWord,{$ENDIF}
+                                              ftLargeint] Then
           Begin
            If Lowercase(Query.Fields[I].FieldName) = Lowercase(Massivedataset.SequenceField) Then
             Continue;
@@ -4817,15 +4705,14 @@ Begin
             Begin
              If vTempValue <> Null Then
               Begin
-               If Query.Fields[I].DataType in [{$IFNDEF FPC}{$IF CompilerVersion > 21}ftLongWord, {$IFEND}{$ENDIF}ftLargeint] Then
+               If Query.Fields[I].DataType in [{$IFDEF DELPHIXEUP}ftLongWord,{$ENDIF}
+                                               ftLargeint] Then
                 Begin
-                 {$IFNDEF FPC}
-                  {$IF CompilerVersion > 21}Query.Fields[I].AsLargeInt := StrToInt64(vTempValue)
-                  {$ELSE} Query.Fields[I].AsInteger                    := StrToInt64(vTempValue)
+                  {$IF Defined(RESTDWLAZARUS) or Defined(DELPHIXEUP)}
+                   Query.Fields[I].AsLargeInt := StrToInt64(vTempValue)
+                  {$ELSE}
+                   Query.Fields[I].AsInteger := StrToInt64(vTempValue)
                   {$IFEND}
-                 {$ELSE}
-                  Query.Fields[I].AsLargeInt := StrToInt64(vTempValue);
-                 {$ENDIF}
                 End
                Else
                 Query.Fields[I].AsInteger  := StrToInt(vTempValue);
@@ -4834,7 +4721,9 @@ Begin
            Else
             Query.Fields[I].Clear;
           End
-         Else If Query.Fields[I].DataType in [ftFloat,   ftCurrency, ftBCD, ftFMTBcd{$IFNDEF FPC}{$IF CompilerVersion > 21}, ftSingle, ftExtended{$IFEND}{$ENDIF}] Then
+         Else If Query.Fields[I].DataType in [ftFloat, ftCurrency, ftBCD, ftFMTBcd
+                                              {$IFDEF DELPHIXEUP}, ftSingle, ftExtended{$ENDIF}]
+                                              Then
           Begin
            If (vTempValue <> Null) And
               (Trim(vTempValue) <> 'null') And
@@ -4920,7 +4809,8 @@ Begin
           vFieldChanged := MassiveField.Modified
         Else Begin
           Case vFieldType Of
-            ftDate, ftTime, ftDateTime, ftTimeStamp: Begin
+            ftDate, ftTime, ftDateTime, ftTimeStamp:
+              Begin
                 If (MassiveField.IsNull And Not(Query.Fields[I].IsNull)) Or
                    (Not(MassiveField.IsNull) And Query.Fields[I].IsNull) Then
                   vFieldChanged := True
@@ -4931,7 +4821,8 @@ Begin
                     vFieldChanged := Not(Query.Fields[I].IsNull);
                 End;
               End;
-            ftBytes, ftVarBytes, ftBlob, ftGraphic, ftOraBlob, ftOraClob: Begin
+            ftBytes, ftVarBytes, ftBlob, ftGraphic, ftOraBlob, ftOraClob:
+              Begin
                 vStringStream := TMemoryStream.Create;
                 Try
                   TBlobfield(Query.Fields[I]).SaveToStream(vStringStream);
@@ -4948,7 +4839,8 @@ Begin
 
         If vFieldChanged Then Begin
           Case vFieldType Of
-            ftDate, ftTime, ftDateTime, ftTimeStamp: Begin
+            ftDate, ftTime, ftDateTime, ftTimeStamp:
+              Begin
                 If (Not MassiveField.IsNull) Then Begin
                   If (Query.Fields[I].AsDateTime <> MassiveField.Value) Or
                      (MassiveField.Modified) Then Begin
@@ -4971,12 +4863,9 @@ Begin
                                       [MassiveField.FieldName, IntToStr(DateTimeToUnix(Query.Fields[I].AsDateTime))]);
                 End;
               End;
-              {$IFNDEF FPC}
-                {$IF CompilerVersion >= 21}
-                  ftSingle, ftExtended,
-                {$IFEND}
-              {$ENDIF}
-              ftFloat, ftCurrency, ftBCD, ftFMTBcd: Begin
+              {$IFDEF DELPHIXEUP}ftSingle, ftExtended,{$ENDIF}
+              ftFloat, ftCurrency, ftBCD, ftFMTBcd:
+              Begin
                 vStringFloat := Query.Fields[I].AsString;
                 If (MassiveField.Modified) Then
                   vStringFloat := BuildStringFloat(MassiveField.Value)
@@ -5001,10 +4890,10 @@ Begin
                     vTempValue := cNullvalue;
                 If vReflectionLine = '' Then
                   vReflectionLine := Format('{"%s":"%s"}',[MassiveField.FieldName,
-                                     EncodeStrings(vTempValue{$IFDEF FPC}, csUndefined{$ENDIF})])
+                                     EncodeStrings(vTempValue{$IFDEF RESTDWLAZARUS}, csUndefined{$ENDIF})])
                 Else
                   vReflectionLine := vReflectionLine + Format(', {"%s":"%s"}',
-                                    [MassiveField.FieldName, EncodeStrings(vTempValue{$IFDEF FPC},csUndefined{$ENDIF})]);
+                                    [MassiveField.FieldName, EncodeStrings(vTempValue{$IFDEF RESTDWLAZARUS},csUndefined{$ENDIF})]);
               End
               Else Begin
                 vStringStream := TMemoryStream.Create;

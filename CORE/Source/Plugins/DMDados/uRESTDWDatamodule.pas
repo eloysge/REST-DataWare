@@ -1,10 +1,12 @@
 unit uRESTDWDatamodule;
 
+{$I ..\..\Includes\uRESTDW.inc}
+
 interface
 
 Uses
   SysUtils, Classes, uRESTDWDataUtils, uRESTDWComponentEvents,
-  uRESTDWBasicTypes, uRESTDWConsts, uRESTDWJSONObject, uRESTDWParams;
+  uRESTDWBasicTypes, uRESTDWConsts, uRESTDWJSONObject, uRESTDWParams, uRESTDWAuthenticators;
 
 Type
  TUserBasicAuth  =             Procedure(Welcomemsg, AccessTag,
@@ -16,7 +18,7 @@ Type
  TUserTokenAuth  =             Procedure(Welcomemsg,
                                          AccessTag          : String;
                                          Params             : TRESTDWParams;
-                                         AuthOptions        : TRESTDWAuthTokenParam;
+                                         AuthOptions        : TRESTDWAuthToken;
                                          Var ErrorCode      : Integer;
                                          Var ErrorMessage   : String;
                                          Var TokenID        : String;
@@ -380,18 +382,14 @@ End;
 Constructor TServerMethodDataModule.Create(Sender: TComponent);
 Begin
  Inherited Create(Sender);
- vRESTDWClientInfo               := TRESTDWClientInfo.Create;
- vClientWelcomeMessage           := '';
- vServerAuthOptions              := Nil;
- {$IFNDEF FPC}
- {$IF CompilerVersion > 21}
-  Encoding         := esUtf8;
+ vRESTDWClientInfo     := TRESTDWClientInfo.Create;
+ vClientWelcomeMessage := '';
+ vServerAuthOptions    := Nil;
+ {$IF Defined(RESTDWLAZARUS) or Defined(DELPHIXEUP)}
+  Encoding := esUtf8;
  {$ELSE}
-  Encoding         := esAscii;
+  Encoding := esAscii;
  {$IFEND}
- {$ELSE}
-  Encoding         := esUtf8;
- {$ENDIF}
 End;
 
 Procedure TServerMethodDataModule.SetClientWelcomeMessage(Value: String);

@@ -1,10 +1,10 @@
 unit uRESTDWAbout;
 
-{$I ..\..\Includes\uRESTDWPlataform.inc}
+{$I ..\..\Includes\uRESTDW.inc}
 
 interface
 
-uses Classes, SysUtils, uRESTDWConsts{$IFDEF FPC}, lclversion{$ENDIF};
+uses Classes, SysUtils, uRESTDWConsts{$IFDEF RESTDWLAZARUS}, lclversion{$ENDIF};
 
 Type
  TRESTDWAboutInfo = (RESTDWAbout);
@@ -32,7 +32,7 @@ Implementation
 
 //uses {$IFNDEF RESTDWLAMW}uRESTDWAboutForm{$ENDIF};
 
-{$IFNDEF FPC}
+{$IFNDEF RESTDWLAZARUS}
 Function GetDelphiVersion : String;
 Begin
  Result := '';
@@ -151,7 +151,7 @@ Begin
           'Version : '+ RESTDWVERSAO;
    Msg := DWStr(Msg);
   {$IFNDEF RESTDWLAMW}
-   {$IFNDEF LINUXFMX}
+   {$IFNDEF RESTDWFMX}
 //    frm := Tfrm_About.Create(nil);
 //    {$IFNDEF FPC}
 //     {$IF Defined(RESTDWFMX)}

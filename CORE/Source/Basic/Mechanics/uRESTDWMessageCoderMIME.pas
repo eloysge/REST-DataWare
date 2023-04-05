@@ -1,6 +1,5 @@
 Unit uRESTDWMessageCoderMIME;
 
-{$I ..\..\Includes\uRESTDWPlataform.inc}
 {$I ..\..\Includes\uRESTDW.inc}
 
 {
@@ -48,6 +47,7 @@ Uses
   Public
    Constructor Create             (AOwner      : TComponent;
                                    Const ALine : String); Reintroduce; Overload;
+   Destructor  Destroy;  Override;
    Function    ReadBody           (ADestStream : TStream;
                                    Var VMsgEnd : Boolean) : TRESTDWMessageDecoder; Override;
    Procedure   CheckAndSetType    (Const AContentType,
@@ -272,6 +272,11 @@ Begin
     End;
   End;
 End;
+
+destructor TRESTDWMessageDecoderMIME.Destroy;
+begin
+  inherited;
+end;
 
 Function TRESTDWMessageDecoderMIME.ReadBody(ADestStream : TStream;
                                             Var VMsgEnd : Boolean) : TRESTDWMessageDecoder;

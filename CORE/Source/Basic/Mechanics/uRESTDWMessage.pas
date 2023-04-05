@@ -1,6 +1,5 @@
 unit uRESTDWMessage;
 
-{$I ..\..\Includes\uRESTDWPlataform.inc}
 {$I ..\..\Includes\uRESTDW.inc}
 
 {

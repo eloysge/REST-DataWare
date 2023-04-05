@@ -1,5 +1,7 @@
 ﻿unit uRESTDWStorageBin;
 
+{$I ..\Includes\uRESTDW.inc}
+
 {
   REST Dataware .
   Criado por XyberX (Gilberto Rocha da Silva), o REST Dataware tem como objetivo o uso de REST/JSON
@@ -12,6 +14,7 @@
  Membros do Grupo :
 
  XyberX (Gilberto Rocha)    - Admin - Criador e Administrador  do pacote.
+ Alberto Brito              - Admin - Administrador  do pacote.
  Alexandre Abbade           - Admin - Administrador do desenvolvimento de DEMOS, coordenador do Grupo.
  Anderson Fiori             - Admin - Gerencia de Organização dos Projetos
  Flávio Motta               - Member Tester and DEMO Developer.
@@ -25,18 +28,19 @@
 interface
 
 uses
-  {$IFNDEF FPC}SqlTimSt, {$ENDIF}
-  Classes, SysUtils, uRESTDWMemoryDataset, FmtBcd, DB, Variants, uRESTDWConsts;
+  {$IFNDEF RESTDWLAZARUS}SqlTimSt, {$ENDIF}
+  Classes, SysUtils, uRESTDWMemoryDataset, FmtBcd, DB, Variants, uRESTDWConsts,
+  uRESTDWTools;
 
 type
   TRESTDWStorageBin = Class(TRESTDWStorageBase)
   private
-    FFieldTypes : Array of integer;
+    FFieldTypes : Array of byte;
     FFieldNames : Array of String;
   public
     procedure SaveRecordToStream(ADataset : TDataset; var AStream : TStream);
     procedure LoadRecordFromStream(ADataset : TDataset; AStream : TStream);
-    function  SaveRecordDWMemToStream(IDataset : IRESTDWMemTable; var AStream : TStream) : Longint;
+    function  SaveRecordDWMemToStream(IDataset : IRESTDWMemTable; var AStream : TStream) : integer;
     procedure LoadRecordDWMemFromStream(IDataset : IRESTDWMemTable; AStream : TStream);
   public
     procedure SaveDWMemToStream(IDataset : IRESTDWMemTable; var AStream : TStream); override;
@@ -48,7 +52,7 @@ type
 implementation
 
 uses
-  uRESTDWProtoTypes, uRESTDWBufferBase, uRESTDWTools;
+  uRESTDWProtoTypes, uRESTDWBufferBase;
 
 { TRESTDWStorageBin }
 
@@ -56,41 +60,58 @@ procedure TRESTDWStorageBin.LoadDatasetFromStream(ADataset: TDataset; AStream: T
 var
   vFieldCount : integer;
   vFieldKind : TFieldKind;
-  vRecordCount : LongInt;
-  i : LongInt;
+  vRecordCount, r : Int64;
+  i : Integer;
   vInt : integer;
-  vString : ansistring;
+  vString : utf8string;
   vFieldType : Byte;
   vBoolean : boolean;
   vByte : byte;
   vFieldDef : TFieldDef;
   vFieldAttrs  : array of byte;
+  vField : TField;
 begin
   AStream.Position := 0;
+  // field count
   AStream.Read(vFieldCount,SizeOf(Integer));
   SetLength(FFieldTypes, vFieldCount);
+
   SetLength(vFieldAttrs, vFieldCount);
   SetLength(FFieldNames, vFieldCount);
-  AStream.Read(vBoolean, Sizeof(Byte));
+
+  // encodestr
+  AStream.Read(vBoolean, Sizeof(vBoolean));
   EncodeStrs := vBoolean;
 
   ADataset.Close;
   ADataset.FieldDefs.Clear;
 
   for i := 0 to vFieldCount-1 do begin
-    AStream.Read(vInt,SizeOf(Integer));
-    vFieldKind := TFieldKind(vInt);
+    // field kind
+    AStream.Read(vByte,SizeOf(vByte));
+    vFieldKind := TFieldKind(vByte);
+
     vFieldDef := ADataset.FieldDefs.AddFieldDef;
-    AStream.Read(vInt,SizeOf(Integer));
-    SetLength(vString,vInt);
-    AStream.Read(vString[InitStrPos],vInt);
+
+    // fieldname
+    AStream.Read(vByte,SizeOf(vByte));
+    SetLength(vString,vByte);
+    AStream.Read(vString[InitStrPos],vByte);
     vFieldDef.Name := vString;
-    AStream.Read(vFieldType,SizeOf(Byte));
-    vFieldDef.DataType := DWFieldTypeToFieldType(vFieldType);
-    FFieldTypes[i] := vFieldType;
+
     FFieldNames[i] := vString;
+
+    // field type
+    AStream.Read(vFieldType,SizeOf(vFieldType));
+    vFieldDef.DataType := DWFieldTypeToFieldType(vFieldType);
+
+    FFieldTypes[i] := vFieldType;
+
+    // field size
     AStream.Read(vInt,SizeOf(Integer));
     vFieldDef.Size := vInt;
+
+    // field precision
     AStream.Read(vInt,SizeOf(Integer));
     if (vFieldType in [dwftFloat,dwftCurrency,dwftExtended,dwftSingle]) then begin
       vFieldDef.Precision := vInt;
@@ -99,41 +120,45 @@ begin
       vFieldDef.Size := 0;
       vFieldDef.Precision := 0;
     end;
+
+    // field required + provider flag
     AStream.Read(vByte,SizeOf(Byte));
     vFieldAttrs[i] := vByte;
     vFieldDef.Required := vByte and 1 > 0;
-    if vFieldKind = fkInternalCalc Then
-      vFieldDef.InternalCalcField := True;
   end;
 
+  // provider flags deve ser recolocado depois dos fields criados
   for i := 0 to vFieldCount-1 do begin
-    if ADataset.FindField(FFieldNames[I]) <> nil then begin
+    vField := ADataset.FindField(FFieldNames[i]);
+    if vField <> nil then begin
+      vField.ProviderFlags := [];
       if vFieldAttrs[i] and 2 > 0 then
-        ADataset.Fields[i].ProviderFlags := ADataset.Fields[i].ProviderFlags + [pfInUpdate];
+        vField.ProviderFlags := vField.ProviderFlags + [pfInUpdate];
       if vFieldAttrs[i] and 4 > 0 then
-        ADataset.Fields[i].ProviderFlags := ADataset.Fields[i].ProviderFlags + [pfInWhere];
+        vField.ProviderFlags := vField.ProviderFlags + [pfInWhere];
       if vFieldAttrs[i] and 8 > 0 then
-        ADataset.Fields[i].ProviderFlags := ADataset.Fields[i].ProviderFlags + [pfInKey];
+        vField.ProviderFlags := vField.ProviderFlags + [pfInKey];
       if vFieldAttrs[i] and 16 > 0 then
-        ADataset.Fields[i].ProviderFlags := ADataset.Fields[i].ProviderFlags + [pfHidden];
-      {$IFDEF FPC}
+        vField.ProviderFlags := vField.ProviderFlags + [pfHidden];
+      {$IFDEF RESTDWLAZARUS}
         if vFieldAttrs[i] and 32 > 0 then
-          ADataset.Fields[i].ProviderFlags := ADataset.Fields[i].ProviderFlags + [pfRefreshOnInsert];
+          vField.ProviderFlags := vField.ProviderFlags + [pfRefreshOnInsert];
         if vFieldAttrs[i] and 64 > 0 then
-          ADataset.Fields[i].ProviderFlags := ADataset.Fields[i].ProviderFlags + [pfRefreshOnUpdate];
+          vField.ProviderFlags := vField.ProviderFlags + [pfRefreshOnUpdate];
       {$ENDIF}
     end;
   end;
 
-  AStream.Read(vRecordCount,SizeOf(LongInt));
+  AStream.Read(vRecordCount,SizeOf(vRecordCount));
   ADataset.Open;
 
   ADataset.DisableControls;
-  for i := 1 to vRecordCount do begin
+  for r := 1 to vRecordCount do begin
     ADataset.Append;
     LoadRecordFromStream(ADataset,AStream);
     ADataset.Post;
   end;
+
   ADataset.EnableControls;
 end;
 
@@ -141,18 +166,21 @@ procedure TRESTDWStorageBin.LoadDWMemFromStream(IDataset: IRESTDWMemTable; AStre
 var
   ADataSet : TRESTDWMemTable;
   vFieldsCount : integer;
-  vRecordCount : LongInt;
-  i : LongInt;
+  vRecordCount, r : int64;
+  i : Integer;
   vInt : integer;
   vFieldKind : TFieldKind;
-  vString : ansistring;
+  vString : utf8string;
   vFieldType : Byte;
   vBoolean : boolean;
   vByte : byte;
   vFieldDef : TFieldDef;
   vFieldAttrs : array of byte;
+  vField : TField;
 begin
   ADataSet := TRESTDWMemTable(IDataset.GetDataset);
+
+  // field count
   AStream.Position := 0;
   AStream.Read(vFieldsCount, SizeOf(vFieldsCount));
 
@@ -160,6 +188,7 @@ begin
   SetLength(vFieldAttrs, vFieldsCount);
   SetLength(FFieldNames, vFieldsCount);
 
+  // encodestrs
   AStream.Read(vBoolean, Sizeof(vBoolean));
   EncodeStrs := vBoolean;
 
@@ -167,19 +196,31 @@ begin
   ADataSet.FieldDefs.Clear;
 
   for i := 0 to vFieldsCount-1 do begin
-    AStream.Read(vInt,SizeOf(Integer));
-    vFieldKind := TFieldKind(vInt);
+    // field kind
+    AStream.Read(vByte,SizeOf(vByte));
+    vFieldKind := TFieldKind(vByte);
+
     vFieldDef := ADataSet.FieldDefs.AddFieldDef;
-    AStream.Read(vInt,SizeOf(Integer));
-    SetLength(vString,vInt);
-    AStream.Read(vString[InitStrPos],vInt);
+
+    // field name
+    AStream.Read(vByte,SizeOf(vByte));
+    SetLength(vString,vByte);
+    AStream.Read(vString[InitStrPos],vByte);
     vFieldDef.Name := vString;
+
     FFieldNames[I] := vString;
+
+    // datatype
     AStream.Read(vFieldType,SizeOf(Byte));
     vFieldDef.DataType := DWFieldTypeToFieldType(vFieldType);
+
     FFieldTypes[i] := vFieldType;
+
+    // field size
     AStream.Read(vInt,SizeOf(Integer));
     vFieldDef.Size := vInt;
+
+    // field precision
     AStream.Read(vInt,SizeOf(Integer));
     if (vFieldType in [dwftFloat, dwftCurrency,dwftExtended,dwftSingle]) then begin
       vFieldDef.Precision := vInt
@@ -188,99 +229,85 @@ begin
       vFieldDef.Size := 0;
       vFieldDef.Precision := 0;
     end;
+
+    // required + provider flags
     AStream.Read(vByte,SizeOf(Byte));
     vFieldAttrs[i] := vByte;
     vFieldDef.Required := vByte and 1 > 0;
-    if vFieldKind = fkInternalCalc Then
-      vFieldDef.InternalCalcField := True;
   end;
 
   ADataSet.Open;
 
+  // provider flags deve ser recolocado depois dos fields criados
   for i := 0 to vFieldsCount-1 do begin
-    if ADataSet.FindField(FFieldNames[i]) <> nil then begin
+    vField := ADataSet.FindField(FFieldNames[i]);
+    if vField <> nil then begin
+      vField.ProviderFlags := [];
       if vFieldAttrs[i] and 2 > 0  Then
-       ADataSet.Fields[i].ProviderFlags := ADataSet.Fields[i].ProviderFlags + [pfInUpdate];
+        vField.ProviderFlags := vField.ProviderFlags + [pfInUpdate];
       if vFieldAttrs[i] and 4 > 0  Then
-       ADataSet.Fields[i].ProviderFlags := ADataSet.Fields[i].ProviderFlags + [pfInWhere];
+        vField.ProviderFlags := vField.ProviderFlags + [pfInWhere];
       if vFieldAttrs[i] and 8 > 0  Then
-       ADataSet.Fields[i].ProviderFlags := ADataSet.Fields[i].ProviderFlags + [pfInKey];
+        vField.ProviderFlags := vField.ProviderFlags + [pfInKey];
       if vFieldAttrs[i] and 16 > 0 Then
-        ADataSet.Fields[i].ProviderFlags := ADataSet.Fields[i].ProviderFlags + [pfHidden];
-      {$IFDEF FPC}
+        vField.ProviderFlags := vField.ProviderFlags + [pfHidden];
+      {$IFDEF RESTDWLAZARUS}
         if vFieldAttrs[i] and 32 > 0 Then
-          ADataSet.Fields[i].ProviderFlags := ADataSet.Fields[i].ProviderFlags + [pfRefreshOnInsert];
+          vField.ProviderFlags := vField.ProviderFlags + [pfRefreshOnInsert];
         if vFieldAttrs[i] and 64 > 0 Then
-          ADataSet.Fields[i].ProviderFlags := ADataSet.Fields[i].ProviderFlags + [pfRefreshOnUpdate];
+          vField.ProviderFlags := vField.ProviderFlags + [pfRefreshOnUpdate];
       {$ENDIF}
     end;
   end;
+
   ADataSet.DisableControls;
   LoadRecordDWMemFromStream(IDataset,AStream);
   ADataSet.EnableControls;
-  ADataSet.First;
 end;
 
 procedure TRESTDWStorageBin.LoadRecordDWMemFromStream(IDataset: IRESTDWMemTable; AStream: TStream);
 var
   ADataset  : TRESTDWMemTable;
-  i : Longint;
+  i : Integer;
   j : integer;
-  vRecCount : Longint;
+  vRecCount, r : int64;
   vFieldCount : integer;
   vFieldSize : integer;
   vRec : TRESTDWRecord;
   vBuf : TRESTDWBuffer;
   vDWFieldType : Byte;
   vInt64 : int64;
-  vString : ansistring;
+  vString : utf8string;
   vBoolean : boolean;
   vByte : Byte;
-  vWord : Word;
+  vSmallInt : smallint;
   vInt : integer;
   vSingle : Single;
   vDouble : Double;
   vCurrency : Currency;
   vBlobField : PRESTDWBlobField;
-//  vRecInfo : PRESTDWRecInfo;
   vDecBuf : int64;
   sStr : TStringStream;
+
   procedure clearBuffer;
   var
     f,z,n : integer;
   begin
     n := IDataSet.GetRecordSize;
     FillChar(vBuf^, n, 0);
-
-    n := 0;
-    for f := 0 to ADataset.FieldCount-1 do begin
-      z := IDataSet.GetFieldSize(f) + 1;
-      FillChar(vBuf^, 1, 1);
-      Inc(vBuf,z);
-      n := n + z;
-    end;
-
-{
-    vRecInfo := New(PRESTDWRecInfo);
-    FillChar(vRecInfo^, SizeOf(TRESTDWRecInfo), 0);
-    vRecInfo^.Bookmark := i;
-    vRecInfo^.BookmarkFlag := bfInserted;
-
-    if i = 0 then
-      vRecInfo^.BookmarkFlag := bfBOF
-    else if i = vRecCount then
-      vRecInfo^.BookmarkFlag := bfEOF;
-    Move(vRecInfo,vBuf^,SizeOf(Pointer));
-}
-    Dec(vBuf,n);
   end;
+
 begin
   ADataset := TRESTDWMemTable(IDataset.GetDataset);
+
+  // record count
   AStream.Read(vRecCount, SizeOf(vRecCount));
   vRecCount := vRecCount - 1;
+
   vFieldCount := Length(FFieldNames);
   vFieldCount := vFieldCount - 1;
-  for i := 0 to vRecCount do begin
+
+  for r := 0 to vRecCount do begin
     GetMem(vBuf, IDataset.GetRecordSize);
     clearBuffer;
     vDecBuf := 0;
@@ -299,7 +326,7 @@ begin
           vString := '';
           if vInt64 > 0 then begin
             SetLength(vString, vInt64);
-            {$IFDEF FPC}
+            {$IFDEF RESTDWLAZARUS}
               AStream.Read(Pointer(vString)^, vInt64);
               if EncodeStrs then
                 vString := DecodeStrings(vString, csUndefined);
@@ -319,13 +346,14 @@ begin
           vString := '';
           if vInt64 > 0 then begin
             SetLength(vString, vInt64);
-            {$IFDEF FPC}
+            {$IFDEF RESTDWLAZARUS}
               AStream.Read(Pointer(vString)^, vInt64);
               if EncodeStrs then
                 vString := DecodeStrings(vString, csUndefined);
               vString := GetStringEncode(vString, csUndefined);
             {$ELSE}
               AStream.Read(vString[InitStrPos], vInt64);
+//              vString:= utf8decode(rawbytestring(vString));
               if EncodeStrs then
                 vString := DecodeStrings(vString);
             {$ENDIF}
@@ -346,8 +374,8 @@ begin
         end
         // 2 - Bytes
         else if (vDWFieldType in [dwftSmallint,dwftWord]) then begin
-          AStream.Read(vWord, SizeOf(vWord));
-          Move(vWord,vBuf^,Sizeof(vWord));
+          AStream.Read(vSmallInt, SizeOf(vSmallInt));
+          Move(vSmallInt,vBuf^,Sizeof(vSmallInt));
         end
         // 4 - Bytes - Inteiros
         else if (vDWFieldType in [dwftInteger]) then
@@ -418,7 +446,7 @@ begin
           vString := '';
           if vInt64 > 0 then begin
             SetLength(vString, vInt64);
-            {$IFDEF FPC}
+            {$IFDEF RESTDWLAZARUS}
               AStream.Read(Pointer(vString)^, vInt64);
               if EncodeStrs then
                 vString := DecodeStrings(vString, csUndefined);
@@ -446,7 +474,7 @@ begin
           vString := '';
           if vInt64 > 0 then begin
             SetLength(vString, vInt64);
-            {$IFDEF FPC}
+            {$IFDEF RESTDWLAZARUS}
               AStream.Read(Pointer(vString)^, vInt64);
               if EncodeStrs then
                 vString := DecodeStrings(vString, csUndefined);
@@ -486,7 +514,7 @@ begin
           vString := '';
           if vInt64 > 0 then begin
             SetLength(vString, vInt64);
-            {$IFDEF FPC}
+            {$IFDEF RESTDWLAZARUS}
               AStream.Read(Pointer(vString)^, vInt64);
               if EncodeStrs then
                 vString := DecodeStrings(vString, csUndefined);
@@ -513,7 +541,7 @@ begin
     Dec(vBuf,vDecBuf);
     vRec := TRESTDWRecord.Create(ADataset);
     vRec.Buffer := vBuf;
-    FreeMem(vBuf);
+    Freemem(vBuf);
     IDataset.AddNewRecord(vRec);
   end;
 end;
@@ -522,22 +550,20 @@ procedure TRESTDWStorageBin.LoadRecordFromStream(ADataset: TDataset; AStream: TS
 var
   vField        : TField;
   i : integer;
-  vString       : DWString;
+  vString       : utf8string;
   vInt64        : Int64;
   vInt          : Integer;
   vDouble       : Double;
   vTimeZone     : Double;
   vSingle       : Single;
-  vWord         : Word;
+  vSmallint     : Smallint;
   vCurrency     : Currency;
   vMemoryAStream : TMemoryStream;
   vBoolean      : Boolean;
   vByte         : Byte;
- {$IFNDEF FPC}
-   {$IF CompilerVersion >= 21}
-     vTimeStampOffset : TSQLTimeStampOffset;
-   {$IFEND}
- {$ENDIF}
+  {$IFDEF DELPHIXEUP}
+  vTimeStampOffset : TSQLTimeStampOffset;
+  {$ENDIF}
 begin
   for i := 0 to Length(FFieldTypes)-1 do begin
     vField := ADataset.Fields[i];
@@ -552,7 +578,7 @@ begin
       vString := '';
       if vInt64 > 0 then begin
         SetLength(vString, vInt64);
-        {$IFDEF FPC}
+        {$IFDEF RESTDWLAZARUS}
          AStream.Read(Pointer(vString)^, vInt64);
          if EncodeStrs then
            vString := DecodeStrings(vString, csUndefined);
@@ -579,8 +605,8 @@ begin
     end
     // 2 - Bytes
     else if (FFieldTypes[i] in [dwftSmallint,dwftWord]) then begin
-      AStream.Read(vWord, Sizeof(vWord));
-      vField.AsInteger := vWord;
+      AStream.Read(vSmallint, Sizeof(vSmallint));
+      vField.AsInteger := vSmallint;
     end
     // 4 - Bytes - Inteiros
     else if (FFieldTypes[i] in [dwftInteger]) then
@@ -592,25 +618,21 @@ begin
     else if (FFieldTypes[i] in [dwftSingle]) then
     begin
       AStream.Read(vSingle, Sizeof(vSingle));
-      {$IFDEF FPC}
-        vField.AsFloat := vSingle;
+      {$IFDEF DELPHIXEUP}
+      vField.AsSingle := vSingle;
       {$ELSE}
-        {$IF (CompilerVersion < 22)}
-          vField.AsFloat := vSingle;
-        {$ELSE}
-          vField.AsSingle := vSingle;
-        {$IFEND}
+      vField.AsFloat := vSingle;
       {$ENDIF}
     end
     // 8 - Bytes - Inteiros
     else if (FFieldTypes[i] in [dwftLargeint,dwftAutoInc,dwftLongWord]) then
     begin
       AStream.Read(vInt64, Sizeof(vInt64));
-      {$IF NOT DEFINED(FPC) AND (CompilerVersion < 22)}
-        vField.AsInteger := vInt64;
+      {$IFDEF DELPHIXEUP}
+      vField.AsLargeInt := vInt64;
       {$ELSE}
-        vField.AsLargeInt := vInt64;
-      {$IFEND}
+      vField.AsInteger := vInt64;
+      {$ENDIF}
     end
     // 8 - Bytes - Flutuantes
     else if (FFieldTypes[i] in [dwftFloat,dwftExtended]) then
@@ -632,7 +654,7 @@ begin
     // TimeStampOffSet To Double - 8 Bytes
     // + TimeZone                - 2 Bytes
     else if (FFieldTypes[i] in [dwftTimeStampOffset]) then begin
-      {$IF (NOT DEFINED(FPC)) AND (CompilerVersion >= 21)}
+      {$IFDEF DELPHIXEUP}
         AStream.Read(vDouble, Sizeof(vDouble));
         vTimeStampOffset := DateTimeToSQLTimeStampOffset(vDouble);
         AStream.Read(vByte, Sizeof(vByte));
@@ -652,7 +674,7 @@ begin
           vTimeZone := vTimeZone - (vByte / 60 / 24);
         vDouble := vDouble - vTimeZone;
         vField.AsDateTime := vDouble;
-      {$IFEND}
+      {$ENDIF}
     end
     // 8 - Bytes - Currency
     else if (FFieldTypes[i] in [dwftCurrency,dwftBCD,dwftFMTBcd]) then
@@ -681,7 +703,7 @@ begin
       vString := '';
       if vInt64 > 0 then begin
         SetLength(vString, vInt64);
-        {$IFDEF FPC}
+        {$IFDEF RESTDWLAZARUS}
          AStream.Read(Pointer(vString)^, vInt64);
          if EncodeStrs then
            vString := DecodeStrings(vString, csUndefined);
@@ -700,39 +722,57 @@ end;
 procedure TRESTDWStorageBin.SaveDatasetToStream(ADataset: TDataset; var AStream: TStream);
 var
   i : integer;
-  vRecordCount : Longint;
-  vString : ansistring;
+  vRecordCount : int64;
+  vString : utf8string;
   vInt : integer;
   vBoolean : boolean;
   vByte : byte;
   vBookMark : TBookmark;
 begin
-  AStream.Size := 0;
+  //  AStream.Size := 0; // TBufferedFileStream nao funciona no lazarus
+  AStream.Seek(0,soBeginning);
   if not ADataset.Active then
     ADataset.Open
   else
     ADataset.CheckBrowseMode;
+
   ADataset.UpdateCursorPos;
+
+  // fields cound
   i := ADataset.FieldCount;
   AStream.Write(i,SizeOf(integer));
+
+  // encodestr
   vBoolean := EncodeStrs;
-  AStream.Write(vBoolean,SizeOf(Byte));
+  AStream.Write(vBoolean,SizeOf(vBoolean));
+
   i := 0;
   while i < ADataset.FieldCount do begin
-    vInt := Ord(ADataset.Fields[i].FieldKind);
-    AStream.Write(vInt,SizeOf(Integer));
+    // field kind
+    vByte := Ord(ADataset.Fields[i].FieldKind);
+    AStream.Write(vByte,SizeOf(vByte));
+
+    // field name
     vString := ADataset.Fields[i].DisplayName;
-    vInt := Length(vString);
-    AStream.Write(vInt,SizeOf(Integer));
-    AStream.Write(vString[InitStrPos],vInt);
+    vByte := Length(vString);
+    AStream.Write(vByte,SizeOf(vByte));
+    AStream.Write(vString[InitStrPos],vByte);
+
+    // datatype
     vByte := FieldTypeToDWFieldType(ADataset.Fields[i].DataType);
     AStream.Write(vByte,SizeOf(Byte));
+
+    // field size
     vInt := ADataset.Fields[i].Size;
     AStream.Write(vInt,SizeOf(Integer));
+
+    // field precision
     vInt := 0;
     if ADataset.Fields[i].InheritsFrom(TFloatField) then
       vInt := TFloatField(ADataset.Fields[i]).Precision;
     AStream.Write(vInt,SizeOf(Integer));
+
+    // requeired + provider flags
     vByte := 0;
     if ADataset.Fields[i].Required then
       vByte := vByte + 1;
@@ -744,7 +784,7 @@ begin
       vByte := vByte + 8;
     if pfHidden in ADataset.Fields[i].ProviderFlags then
       vByte := vByte + 16;
-    {$IFDEF FPC}
+    {$IFDEF RESTDWLAZARUS}
       if pfRefreshOnInsert in ADataset.Fields[i].ProviderFlags then
         vByte := vByte + 32;
       if pfRefreshOnUpdate in ADataset.Fields[i].ProviderFlags then
@@ -754,24 +794,40 @@ begin
     i := i + 1;
   end;
   i := AStream.Position;
+
+  // marcando position do recordcount = 0
   vRecordCount := 0;
-  AStream.WriteBuffer(vRecordCount,SizeOf(Longint));
-  vBookMark := ADataset.GetBookmark;
+  AStream.WriteBuffer(vRecordCount,SizeOf(vRecordCount));
+
+  if not ADataset.IsUniDirectional then
+    vBookMark := ADataset.GetBookmark;
+
   ADataset.DisableControls;
-  // fetchall
-  ADataset.Last;
-  ADataset.First;
+
+  if not ADataset.IsUniDirectional then
+    ADataset.First;
+
   vRecordCount := 0;
   while not ADataset.Eof do begin
-    SaveRecordToStream(ADataset,AStream);
+    try
+      SaveRecordToStream(ADataset,AStream);
+    except
+
+    end;
     ADataset.Next;
     vRecordCount := vRecordCount + 1;
   end;
-  ADataset.GotoBookmark(vBookMark);
-  ADataset.FreeBookmark(vBookMark);
+
+  if not ADataset.IsUniDirectional then begin
+    ADataset.GotoBookmark(vBookMark);
+    ADataset.FreeBookmark(vBookMark);
+  end;
+
   ADataset.EnableControls;
+
+  // marcando novo valor de recordcount
   AStream.Position := i;
-  AStream.WriteBuffer(vRecordCount,SizeOf(Longint));
+  AStream.WriteBuffer(vRecordCount,SizeOf(vRecordCount));
   AStream.Position := 0;
 end;
 
@@ -779,8 +835,8 @@ procedure TRESTDWStorageBin.SaveDWMemToStream(IDataset: IRESTDWMemTable; var ASt
 var
   i : integer;
   ADataset : TRESTDWMemTable;
-  vRecordCount : Longint;
-  vString : ansistring;
+  vRecordCount : int64;
+  vString : utf8string;
   vInt : integer;
   vBoolean : boolean;
   vByte : byte;
@@ -793,26 +849,42 @@ begin
   else
     ADataset.CheckBrowseMode;
   ADataset.UpdateCursorPos;
+
+  // field count
   i := ADataset.FieldCount;
   AStream.Write(i,SizeOf(integer));
+
+  // encode str
   vBoolean := EncodeStrs;
   AStream.Write(vBoolean,SizeOf(Byte));
+
   i := 0;
   while i < ADataset.FieldCount do begin
-    vInt := Ord(ADataset.Fields[i].FieldKind);
-    AStream.Write(vInt,SizeOf(Integer));
+    // fieldkind
+    vByte := Ord(ADataset.Fields[i].FieldKind);
+    AStream.Write(vByte,SizeOf(vByte));
+
+    // fieldname
     vString := ADataset.Fields[i].DisplayName;
-    vInt := Length(vString);
-    AStream.Write(vInt,SizeOf(Integer));
-    AStream.Write(vString[InitStrPos],vInt);
+    vByte := Length(vString);
+    AStream.Write(vByte,SizeOf(vByte));
+    AStream.Write(vString[InitStrPos],vByte);
+
+    // datatype
     vByte := FieldTypeToDWFieldType(ADataset.Fields[i].DataType);
     AStream.Write(vByte,SizeOf(Byte));
+
+    // fieldsize
     vInt := ADataset.Fields[i].Size;
     AStream.Write(vInt,SizeOf(Integer));
+
+    // field precision
     vInt := 0;
     if ADataset.Fields[i].InheritsFrom(TFloatField) then
       vInt := TFloatField(ADataset.Fields[i]).Precision;
     AStream.Write(vInt,SizeOf(Integer));
+
+    // required + provider flags
     vByte := 0;
     if ADataset.Fields[i].Required then
       vByte := vByte + 1;
@@ -824,27 +896,33 @@ begin
       vByte := vByte + 8;
     if pfHidden in ADataset.Fields[i].ProviderFlags then
       vByte := vByte + 16;
-    {$IFDEF FPC}
+    {$IFDEF RESTDWLAZARUS}
       if pfRefreshOnInsert in ADataset.Fields[i].ProviderFlags then
         vByte := vByte + 32;
       if pfRefreshOnUpdate in ADataset.Fields[i].ProviderFlags then
         vByte := vByte + 64;
     {$ENDIF}
     AStream.Write(vByte,SizeOf(Byte));
+
     i := i + 1;
   end;
   i := AStream.Position;
+
+  // marcando position recordcount = 0
   vRecordCount := 0;
-  AStream.WriteBuffer(vRecordCount,SizeOf(Longint));
+  AStream.WriteBuffer(vRecordCount,SizeOf(vRecordCount));
+
   vRecordCount := SaveRecordDWMemToStream(IDataSet,AStream);
+
+  // salvando novo valor de recordcount
   AStream.Position := i;
-  AStream.WriteBuffer(vRecordCount,SizeOf(Longint));
+  AStream.WriteBuffer(vRecordCount,SizeOf(vRecordCount));
   AStream.Position := 0;
 end;
 
-function TRESTDWStorageBin.SaveRecordDWMemToStream(IDataset: IRESTDWMemTable; var AStream: TStream) : Longint;
+function TRESTDWStorageBin.SaveRecordDWMemToStream(IDataset: IRESTDWMemTable; var AStream: TStream) : Integer;
 var
-  ADataSet      : TRESTDWMemTable;
+  ADataSet : TRESTDWMemTable;
   i : Longint;
   j : integer;
   vFieldSize : integer;
@@ -853,11 +931,11 @@ var
   vRec : TRESTDWRecord;
   vBuf : TRESTDWBuffer;
   vBoolean : boolean;
-  vString : ansistring;
+  vString : utf8string;
   vInt : integer;
   vInt64 : int64;
   vByte : Byte;
-  vWord : Word;
+  vSmallint : Smallint;
   vSingle : Single;
   vDouble : double;
   vCurrency : Currency;
@@ -886,7 +964,7 @@ Begin
           SetLength(vString,vFieldSize);
           Move(vBuf^,vString[InitStrPos],vFieldSize);
           if EncodeStrs then
-            vString := EncodeStrings(vString{$IFDEF FPC}, csUndefined{$ENDIF});
+            vString := EncodeStrings(vString{$IFDEF RESTDWLAZARUS}, csUndefined{$ENDIF});
           vInt64 := Length(vString);
           AStream.Write(vInt64, Sizeof(vInt64));
           if vInt64 <> 0 then
@@ -896,12 +974,12 @@ Begin
         else if (vDWFieldType in [dwftByte,dwftShortint,dwftBoolean]) then
         begin
           Move(vBuf^,vByte,Sizeof(vByte));
-          AStream.Write(vByte, Sizeof(vByte));
+          AStream.Write(vByte, SizeOf(vByte));
         end
         // 2 - Bytes
         else if (vDWFieldType in [dwftSmallint,dwftWord]) then begin
-          Move(vBuf^,vWord,Sizeof(vWord));
-          AStream.Write(vWord, Sizeof(vWord));
+          Move(vBuf^,vSmallint,Sizeof(vSmallint));
+          AStream.Write(vSmallint, SizeOf(vSmallint));
         end
         // 4 - Bytes - Inteiros
         else if (vDWFieldType in [dwftInteger]) then
@@ -932,8 +1010,7 @@ Begin
           Move(vBuf^,vDouble,Sizeof(vDouble));
           AStream.Write(vDouble, Sizeof(vDouble));
         end
-        {$IFNDEF FPC}
-          {$IF CompilerVersion >= 21}
+        {$IFDEF DELPHIXEUP}
             // TimeStampOffSet To Double - 8 Bytes
             // + TimeZone                - 2 Bytes
             else if (vDWFieldType in [dwftTimeStampOffset]) then begin
@@ -948,7 +1025,6 @@ Begin
               Inc(vBuf,Sizeof(vByte));
               Dec(vBuf,vFieldSize);
             end
-          {$IFEND}
         {$ENDIF}
         // 8 - Bytes - Currency
         else if (vDWFieldType in [dwftCurrency]) then
@@ -982,7 +1058,7 @@ Begin
           SetLength(vString,vFieldSize);
           Move(vBuf^,vString[InitStrPos],vFieldSize);
           if EncodeStrs then
-            vString := EncodeStrings(vString{$IFDEF FPC}, csUndefined{$ENDIF});
+            vString := EncodeStrings(vString{$IFDEF RESTDWLAZARUS}, csUndefined{$ENDIF});
           vInt64 := Length(vString);
           AStream.Write(vInt64, Sizeof(vInt64));
           if vInt64 <> 0 then
@@ -1003,7 +1079,8 @@ var
   i: integer;
   vDWFieldType : Byte;
   vBytes: TRESTDWBytes;
-  vString       : DWString;
+  vString       : RAWbytestring;
+  vWideString   : Utf8string;
   vInt64        : Int64;
   vInt          : Integer;
   vDouble       : Double;
@@ -1013,26 +1090,37 @@ var
   vMemoryStream : TMemoryStream;
   vBoolean      : boolean;
   vByte         : Byte;
-  {$IFNDEF FPC}
-    {$IF CompilerVersion >= 21}
-      vTimeStampOffset : TSQLTimeStampOffset;
-    {$IFEND}
+  {$IFDEF DELPHIXEUP}
+  vTimeStampOffset : TSQLTimeStampOffset;
   {$ENDIF}
 Begin
   vMemoryStream := nil;
   for i := 0 to ADataset.FieldCount - 1 do begin
     vBoolean := ADataset.Fields[i].IsNull;
-    AStream.Write(vBoolean, SizeOf(Byte));
+    AStream.Write(vBoolean, SizeOf(vBoolean));
+
     if vBoolean then
       Continue;
+
     vDWFieldType := FieldTypeToDWFieldType(ADataset.Fields[i].DataType);
     // N - Bytes
-    if (vDWFieldType in [dwftFixedChar,dwftWideString,dwftString,
-                         dwftFixedWideChar, dwftWideMemo,dwftFmtMemo,
-                         dwftMemo]) then begin
+    if (vDWFieldType in [dwftFixedChar,dwftWideString,
+                         dwftFixedWideChar, dwftWideMemo,dwftFmtMemo
+                         ]) then begin
+      vWideString := ADataset.Fields[i].AsString;
+      if EncodeStrs then
+        vWideString := EncodeStrings(vWideString{$IFDEF RESTDWLAZARUS}, csUndefined{$ENDIF});
+      vInt64 := Length(vWideString);
+      AStream.Write(vInt64, SizeOf(vInt64));
+      if vInt64 <> 0 then
+        AStream.Write(vWideString[InitStrPos], vInt64);
+    end
+     // N - Bytes
+   else if (vDWFieldType in [dwftString, dwftMemo]) then
+   begin
       vString := ADataset.Fields[i].AsString;
       if EncodeStrs then
-        vString := EncodeStrings(vString{$IFDEF FPC}, csUndefined{$ENDIF});
+        vString := EncodeStrings(vString{$IFDEF RESTDWLAZARUS}, csUndefined{$ENDIF});
       vInt64 := Length(vString);
       AStream.Write(vInt64, SizeOf(vInt64));
       if vInt64 <> 0 then
@@ -1064,12 +1152,8 @@ Begin
     // 4 - Bytes - Flutuantes
     else if (vDWFieldType in [dwftSingle]) then
     begin
-      {$IFNDEF FPC}
-        {$IF CompilerVersion >= 21}
-          vSingle := ADataset.Fields[i].AsSingle;
-        {$ELSE}
-          vSingle := ADataset.Fields[i].AsFloat;
-        {$IFEND}
+      {$IFDEF DELPHIXEUP}
+        vSingle := ADataset.Fields[i].AsSingle;
       {$ELSE}
         vSingle := ADataset.Fields[i].AsFloat;
       {$ENDIF}
@@ -1078,11 +1162,11 @@ Begin
     // 8 - Bytes - Inteiros
     else if (vDWFieldType in [dwftLargeint,dwftAutoInc,dwftLongWord]) then
     begin
-     {$IF NOT(Defined(FPC)) AND (CompilerVersion <= 21)}
-      vInt64 := ADataset.Fields[i].AsInteger;
-     {$ELSE}
+      {$IFDEF DELPHIXEUP}
       vInt64 := ADataset.Fields[i].AsLargeInt;
-     {$IFEND}
+      {$ELSE}
+      vInt64 := ADataset.Fields[i].AsInteger;
+      {$ENDIF}
       AStream.Write(vInt64, Sizeof(vInt64));
     end
     // 8 - Bytes - Flutuantes
@@ -1097,8 +1181,7 @@ Begin
       vDouble := ADataset.Fields[i].AsDateTime;
       AStream.Write(vDouble, Sizeof(vDouble));
     end
-    {$IFNDEF FPC}
-      {$IF CompilerVersion >= 21}
+    {$IFDEF DELPHIXEUP}
         // TimeStampOffSet To Double - 8 Bytes
         // + TimeZone                - 2 Bytes
         else if (vDWFieldType in [dwftTimeStampOffset]) then begin
@@ -1110,7 +1193,6 @@ Begin
           vByte := vTimeStampOffSet.TimeZoneMinute;
           AStream.Write(vByte, Sizeof(vByte));
         end
-      {$IFEND}
     {$ENDIF}
     // 8 - Bytes - Currency
     else if (vDWFieldType in [dwftCurrency,dwftBCD,dwftFMTBcd]) then
@@ -1142,7 +1224,7 @@ Begin
     else begin
       vString := ADataset.Fields[i].AsString;
       if EncodeStrs then
-        vString := EncodeStrings(vString{$IFDEF FPC}, csUndefined{$ENDIF});
+        vString := EncodeStrings(vString{$IFDEF RESTDWLAZARUS}, csUndefined{$ENDIF});
       vInt64 := Length(vString);
       AStream.Write(vInt64, SizeOf(vInt64));
       if vInt64 <> 0 then

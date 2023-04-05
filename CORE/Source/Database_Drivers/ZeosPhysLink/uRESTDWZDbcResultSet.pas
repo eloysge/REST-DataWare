@@ -1,7 +1,8 @@
-unit uRESTDWZDbcResultSet;
+﻿unit uRESTDWZDbcResultSet;
 
-{$I ..\..\..\Source\Includes\uRESTDWPlataform.inc}
-{$IFNDEF FPC}
+{$I ..\..\Includes\uRESTDW.inc}
+
+{$IFNDEF RESTDWLAZARUS}
   {$I ZDbc.inc}
 {$ELSE}
   {$MODE DELPHI}
@@ -58,7 +59,7 @@ type
     FEncodeStrs : boolean;
     FFieldCount : integer;
     FRecordPos : int64;
-    FRecordCount : LongInt;
+    FRecordCount : int64;
     FFieldTypes : array of byte;
     FVariantTable : array of array of Variant;
 
@@ -170,7 +171,7 @@ implementation
 
 uses
   ZMessages, ZTokenizer, ZVariant, ZEncoding, ZFastCode,
-  ZGenericSqlAnalyser, uRESTDWProtoTypes {$IFNDEF FPC}, SqlTimSt {$ENDIF};
+  ZGenericSqlAnalyser, uRESTDWProtoTypes {$IFNDEF RESTDWLAZARUS}, SqlTimSt {$ENDIF};
 
 { TZRESTDWCachedResultSet }
 
@@ -232,7 +233,7 @@ var
   vFieldKind : TFieldKind;
 
   vBoolean : boolean;
-  vString : ansistring;
+  vString : utf8string;
   vInt : integer;
   vInt64 : int64;
   vDWFielType : Byte;
@@ -244,9 +245,11 @@ begin
   LastRowNo := 0;
   ColumnsInfo.Clear;
 
+  // field count
   FStream.Read(FFieldCount,SizeOf(integer));
   SetLength(FFieldTypes,FFieldCount);
 
+  // encodestrs
   FStream.Read(vBoolean, Sizeof(vBoolean));
   FEncodeStrs := vBoolean;
 
@@ -254,12 +257,14 @@ begin
   while i < FFieldCount do begin
     ColumnInfo := TZColumnInfo.Create;
     with ColumnInfo do begin
-      FStream.Read(vInt,SizeOf(Integer));
-      vFieldKind := TFieldKind(vInt);
+      // field kind
+      FStream.Read(vByte,SizeOf(vByte));
+      vFieldKind := TFieldKind(vByte);
 
-      FStream.Read(vInt,SizeOf(Integer));
-      SetLength(vString,vInt);
-      FStream.Read(vString[InitStrPos],vInt);
+      // field name
+      FStream.Read(vByte,SizeOf(vByte));
+      SetLength(vString,vByte);
+      FStream.Read(vString[InitStrPos],vByte);
 
       ColumnName := vString;
       ColumnLabel := vString;
@@ -268,16 +273,20 @@ begin
 
       ReadOnly := False;
 
-      FStream.Read(vDWFielType,SizeOf(Byte));
+      // field type
+      FStream.Read(vDWFielType,SizeOf(vDWFielType));
       vFieldType := DWFieldTypeToFieldType(vDWFielType);
       FFieldTypes[i] := vDWFielType;
 
       ColumnType := ConvertDatasetToDbcType(vFieldType);
 
+      // field size
       FStream.Read(vFieldSize,SizeOf(Integer));
 
+      // field precision
       FStream.Read(vFieldPrecision,SizeOf(Integer));
 
+      // required + provider flags
       FStream.Read(vByte,SizeOf(Byte));
 
       if ColumnType in [stString, stAsciiStream] then begin
@@ -327,7 +336,8 @@ end;
 
 procedure TZRESTDWResultSet.streamToArray;
 var
-  i, j          : integer;
+  i             : int64;
+  j             : integer;
   vString       : DWString;
   vInt64        : Int64;
   vInt          : Integer;
@@ -339,10 +349,8 @@ var
   VTimeZone     : Double;
   vCurrency     : Currency;
   vStringStream : TStringStream;
-  {$IFNDEF FPC}
-    {$IF CompilerVersion >= 21}
-      vTimeStampOffset : TSQLTimeStampOffset;
-    {$IFEND}
+  {$IFDEF DELPHIXEUP}
+  vTimeStampOffset : TSQLTimeStampOffset;
   {$ENDIF}
 begin
   SetLength(FVariantTable,FRecordCount);
@@ -361,10 +369,10 @@ begin
         vString := '';
         if vInt64 > 0 then begin
           SetLength(vString, vInt64);
-          {$IFDEF FPC}
+          {$IFDEF RESTDWLAZARUS}
            FStream.Read(Pointer(vString)^, vInt64);
            if FEncodeStrs then
-             vString := DecodeStrings(vString {$IFDEF FPC}, csUndefined {$ENDIF});
+             vString := DecodeStrings(vString, csUndefined);
            vString := GetStringEncode(vString, csUTF8);
           {$ELSE}
            FStream.Read(vString[InitStrPos], vInt64);
@@ -382,10 +390,10 @@ begin
         vString := '';
         if vInt64 > 0 then begin
           SetLength(vString, vInt64);
-          {$IFDEF FPC}
+          {$IFDEF RESTDWLAZARUS}
            FStream.Read(Pointer(vString)^, vInt64);
            if FEncodeStrs then
-             vString := DecodeStrings(vString {$IFDEF FPC}, csUndefined {$ENDIF});
+             vString := DecodeStrings(vString, csUndefined);
            vString := GetStringEncode(vString, csUTF8);
           {$ELSE}
            FStream.Read(vString[InitStrPos], vInt64);
@@ -447,7 +455,7 @@ begin
       // TimeStampOffSet To Double - 8 Bytes
       // + TimeZone                - 2 Bytes
       else if (FFieldTypes[j] in [dwftTimeStampOffset]) then begin
-        {$IF (NOT DEFINED(FPC)) AND (CompilerVersion >= 21)}
+        {$IFDEF DELPHIXEUP}
           FStream.Read(vDouble, Sizeof(vDouble));
 
           vTimeStampOffSet := DateTimeToSQLTimeStampOffset(vDouble);
@@ -473,7 +481,7 @@ begin
 
           vDouble := vDouble - vTimeZone;
           FVariantTable[i,j] := vDouble;
-        {$IFEND}
+        {$ENDIF}
       end
       // 8 - Bytes - Currency
       else if (FFieldTypes[j] in [dwftCurrency,dwftBCD,dwftFMTBcd]) then
@@ -519,10 +527,10 @@ begin
         vString := '';
         if vInt64 > 0 then begin
           SetLength(vString, vInt64);
-          {$IFDEF FPC}
+          {$IFDEF RESTDWLAZARUS}
            FStream.Read(Pointer(vString)^, vInt64);
            if FEncodeStrs then
-             vString := DecodeStrings(vString {$IFDEF FPC}, csUndefined {$ENDIF});
+             vString := DecodeStrings(vString, csUndefined);
            vString := GetStringEncode(vString, csUTF8);
           {$ELSE}
            FStream.Read(vString[InitStrPos], vInt64);
@@ -587,7 +595,7 @@ var
   Len: NativeUint;
 begin
   P := GetPAnsiChar(ColumnIndex, Len);
-  {$IFDEF FPC}
+  {$IFDEF RESTDWLAZARUS}
   Result := '';
   {$ENDIF}
   if P <> nil
@@ -689,7 +697,7 @@ begin
   Result := GetLong(ColumnIndex);
 end;
 
-{$IF defined (RangeCheckEnabled) and defined(WITH_UINT64_C1118_ERROR)}{$R-}{$IFEND}
+{$IF Defined(RangeCheckEnabled) AND Defined(WITH_UINT64_C1118_ERROR)}{$R-}{$IFEND}
 function TZRESTDWResultSet.GetULong(ColumnIndex: Integer): System.UInt64;
 var
   vInt64 : UInt64;
@@ -706,7 +714,7 @@ begin
     Result := vInt64;
   end;
 end;
-{$IF defined (RangeCheckEnabled) and defined(WITH_UINT64_C1118_ERROR)}{$R+}{$IFEND}
+{$IF Defined(RangeCheckEnabled) AND Defined(WITH_UINT64_C1118_ERROR)}{$R+}{$IFEND}
 
 function TZRESTDWResultSet.GetFloat(ColumnIndex: Integer): Single;
 begin
@@ -760,7 +768,7 @@ end;
     vCurrency : Currency;
   begin
     vCurrency := GetCurrency(ColumnIndex);
-    {$IFNDEF FPC}
+    {$IFNDEF RESTDWLAZARUS}
       if not LastWasNull then
         Result := CurrencyToBcd(vCurrency);
     {$ELSE}

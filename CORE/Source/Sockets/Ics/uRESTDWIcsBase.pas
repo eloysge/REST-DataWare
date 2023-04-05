@@ -1,6 +1,7 @@
 unit uRESTDWIcsBase;
 
-{$I ..\..\Includes\uRESTDWPlataform.inc}
+{$I ..\..\Includes\uRESTDW.inc}
+
 {
   REST Dataware .
   Criado por XyberX (Gilbero Rocha da Silva), o REST Dataware tem como objetivo o uso de REST/JSON
@@ -36,33 +37,17 @@ unit uRESTDWIcsBase;
 interface
 
 Uses
-  SysUtils,
-  Classes,
-  DateUtils,
-  SyncObjs,
-  {$IF (CompilerVersion > 22)}vcl.ExtCtrls{$ELSE}ExtCtrls{$IFEND},
-  uRESTDWComponentEvents,
-  uRESTDWBasicTypes,
-  uRESTDWJSONObject,
-  uRESTDWBasic,
-  uRESTDWBasicDB,
-  uRESTDWParams,
-  uRESTDWBasicClass,
-  uRESTDWAbout,
-  uRESTDWConsts,
-  uRESTDWDataUtils,
-  uRESTDWTools,
-  OverbyteIcsWinSock,
-  OverbyteIcsWSocket,
-  OverbyteIcsWndControl,
-  OverbyteIcsHttpAppServer,
-  OverbyteIcsUtils,
-  OverbyteIcsFormDataDecoder,
-  OverbyteIcsMimeUtils,
-  OverbyteIcsSSLEAY,
-  OverbyteIcsHttpSrv,
-  OverbyteIcsWSocketS,
-  OverbyteIcsSslX509Utils;
+  SysUtils,  Classes,  DateUtils,  SyncObjs,
+  {$IFDEF DELPHIXE2UP}vcl.ExtCtrls{$ELSE}ExtCtrls{$ENDIF},
+
+  uRESTDWComponentEvents, uRESTDWBasicTypes, uRESTDWJSONObject, uRESTDWBasic,
+  uRESTDWBasicDB, uRESTDWParams, uRESTDWBasicClass, uRESTDWAbout,
+  uRESTDWConsts, uRESTDWDataUtils, uRESTDWTools, uRESTDWAuthenticators,
+
+  OverbyteIcsWinSock, OverbyteIcsWSocket, OverbyteIcsWndControl,
+  OverbyteIcsHttpAppServer, OverbyteIcsUtils, OverbyteIcsFormDataDecoder,
+  OverbyteIcsMimeUtils, OverbyteIcsSSLEAY, OverbyteIcsHttpSrv,
+  OverbyteIcsWSocketS, OverbyteIcsSslX509Utils;
 
 Type
   TPoolerHttpConnection = class(THttpAppSrvConnection)
@@ -328,11 +313,11 @@ const
   cIcsHTTPConnectionClosed = 'Closed HTTP connection';
   cIcsCorruptedPackage = 'Corrupted package: RequestContentLength <> Stream.Size';
   cIcsSSLLibNotFoundForSSLDisabled =
-    'OpenSSL libs are required by ICS to digest AuthTypes rdwAOBearer, rdwAOToken and rdwOAuth even if SSL is disabled.';
+    'OpenSSL libs are required by ICS to digest AuthTypes Token and OAuth even if SSL is disabled.';
 
 Implementation
 
-Uses uRESTDWJSONInterface, vcl.Dialogs, OverbyteIcsWSockBuf, vcl.Forms;
+Uses uRESTDWJSONInterface, vcl.Dialogs, OverbyteIcsWSockBuf;//, vcl.Forms;
 
 Procedure TRESTDWIcsServicePooler.SetHttpServerSSL;
 var
@@ -457,16 +442,12 @@ begin
     HttpAppSrv.onServerStarted := onServerStartedServer;
     HttpAppSrv.onServerStopped := onServerStoppedServer;
 
-    if AuthenticationOptions.AuthorizationOption <> rdwAONone then
+    if Authenticator <> nil then
     begin
-
-      case AuthenticationOptions.AuthorizationOption of
-        rdwAOBasic:
-          HttpAppSrv.AuthTypes := [atBasic];
-        rdwAOBearer, rdwAOToken, rdwOAuth:
-          HttpAppSrv.AuthTypes := [atDigest];
-      end;
-
+      if Authenticator is TRESTDWAuthBasic then
+        HttpAppSrv.AuthTypes := [atBasic]
+      else if (Authenticator is TRESTDWAuthToken) or (Authenticator is TRESTDWAuthOAuth) then
+        HttpAppSrv.AuthTypes := [atDigest];
     end
     else
       HttpAppSrv.AuthTypes := [atNone];
@@ -920,7 +901,7 @@ begin
 
         if vBruteForceProtection.BruteForceAllow(Pooler.PeerAddr) then
         begin
-          if Self.AuthenticationOptions.OptionParams.AuthDialog then
+          if Self.AuthMessages.AuthDialog then
             Pooler.Answer401
           else
             Pooler.Answer403;

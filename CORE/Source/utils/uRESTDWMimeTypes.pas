@@ -1,5 +1,7 @@
 unit uRESTDWMimeTypes;
 
+{$I ..\Includes\uRESTDW.inc}
+
 interface
 
 uses

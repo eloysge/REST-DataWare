@@ -1,6 +1,6 @@
 unit uRESTDWFReg;
 
-{$I ..\..\..\Source\Includes\uRESTDWPlataform.inc}
+{$I ..\..\..\Source\Includes\uRESTDW.inc}
 {
   REST Dataware .
   Criado por XyberX (Gilbero Rocha da Silva), o REST Dataware tem como objetivo o uso de REST/JSON
@@ -97,7 +97,7 @@ End;
 
 Procedure Register;
 Begin
-//  RegisterComponents('REST Dataware - Service', [TRESTDWFhttpServicePooler, TRESTDWFhttpPoolerList]);
+  RegisterComponents('REST Dataware - Service', [TRESTDWFhttpServicePooler, TRESTDWFhttpPoolerList]);
   RegisterComponents('REST Dataware - Client',  [TRESTDWFhttpClientREST, TRESTDWFhttpClientPooler]);
   RegisterComponents('REST Dataware - DB', [TRESTDWFhttpDatabase]);
   RegisterPropertyEditor(TypeInfo(String), TRESTDWFhttpDatabase, 'PoolerName',TPoolersList);

@@ -1,7 +1,6 @@
 ﻿unit uRESTDWMemoryDataset;
 
-{$I ..\..\..\Source\Includes\uRESTDWPlataform.inc}
-{$I ..\..\..\Source\Includes\uRESTDW.inc}
+{$I ..\..\Includes\uRESTDW.inc}
 
 {
   REST Dataware .
@@ -28,8 +27,8 @@
 interface
 
 uses
-  {$IFNDEF FPC} SqlTimSt, {$ENDIF}
-  SysUtils, Classes, Db, FmtBCD, Variants, uRESTDWExprParser, uRESTDWAbout,
+  {$IFNDEF RESTDWLAZARUS} SqlTimSt, {$ENDIF}
+  SysUtils, Classes, DB, FmtBCD, Variants, uRESTDWExprParser, uRESTDWAbout,
   uRESTDWConsts, uRESTDWPrototypes, uRESTDWTools;
 
 const
@@ -45,19 +44,14 @@ type
   end;
   PRESTDWRecInfo = ^TRESTDWRecInfo;
 
-  {$IFDEF FPC}
+  {$IF Defined(RESTDWLAZARUS) or (Defined(DELPHIXEUP) and not Defined(NEXTGEN))}
     TRESTDWBuffer = TRecordBuffer;
-  {$ELSE}
-    {$IF CompilerVersion < 21}
-      TRESTDWBuffer = PChar;
-    {$ELSE}
-      {$IFDEF NEXTGEN}
-        TRESTDWBuffer = TRecBuf;
-      {$ELSE}
-        TRESTDWBuffer = TRecordBuffer;
-      {$ENDIF}
-    {$IFEND}
-  {$ENDIF}
+  {$ELSEIF Defined(NEXTGEN)}
+    TRESTDWBuffer = TRecBuf;
+  {$ELSEIF not Defined(DELPHIXEUP)}
+    TRESTDWBuffer = PChar;
+  {$IFEND}
+  PRESTDWBuffer = ^TRESTDWBuffer;
 
   TRESTDWMemTable = class;
   TRESTDWBlobStream = class;
@@ -70,12 +64,17 @@ type
 
   { TRESTDWRecord }
 
-  TRESTDWRecord = class(TObject)
+  TRESTDWRecordStatus = (rsOriginal, rsUpdated, rsInserted, rsDeleted);
+
+  PRESTDWRecord = ^TRESTDWRecord;
+  TRESTDWRecord = class(TPersistent)
   private
     FDataset : TRESTDWMemTable;
-    FBuffer : Pointer;
+    FBuffer : TRESTDWBuffer;
     FAccept : Byte;
-    procedure setBuffer(const Value: Pointer);
+    FID     : Integer;
+    FStatus : TRESTDWRecordStatus;
+    procedure setBuffer(const Value: TRESTDWBuffer);
   protected
     procedure clearRecInfo;
     procedure clearBlobsFields;
@@ -83,13 +82,16 @@ type
     constructor Create(AOwner : TRESTDWMemTable);
     destructor Destroy; override;
 
-    function CopyBuffer : Pointer; overload;
-    procedure CopyBuffer(var Buffer : Pointer); overload;
+    function CopyBuffer : TRESTDWBuffer; overload;
+    procedure CopyBuffer(var Buffer : TRESTDWBuffer); overload;
 
-    property Buffer : Pointer read FBuffer write setBuffer;
+    property Buffer : TRESTDWBuffer read FBuffer write setBuffer;
   published
     property Accept : Byte read FAccept write FAccept;
+    property Status : TRESTDWRecordStatus read FStatus write FStatus;
+    property ID : Integer read FID write FID;
   end;
+
 
   TRESTDWBlobStream = class(TStream)
   private
@@ -129,7 +131,7 @@ type
 
   TRESTDWStorageBase = class(TRESTDWComponent)
   private
-    {$IFDEF FPC}
+    {$IFDEF RESTDWLAZARUS}
       FDatabaseCharSet: TDatabaseCharSet;
     {$ENDIF}
     FEncodeStrs: Boolean;
@@ -148,20 +150,38 @@ type
     procedure SaveToFile(ADataset: TDataset; AFileName: String);
     procedure LoadFromFile(ADataset: TDataset; AFileName: String);
   public
-    {$IFDEF FPC}
+    {$IFDEF RESTDWLAZARUS}
       property DatabaseCharSet: TDatabaseCharSet read FDatabaseCharSet  write FDatabaseCharSet;
     {$ENDIF}
     property EncodeStrs: Boolean read FEncodeStrs write FEncodeStrs;
   end;
 
-  TRESTDWRecordStatus = (rsOriginal, rsUpdated, rsInserted, rsDeleted);
   TRESTDWCompareRecords = function(Item1, Item2: TRESTDWRecord): Integer of object;
+
+
+  PRecordList = ^TRecordList;
+
+  { TRecordList }
+
+  TRecordList = Class(TList)
+  private
+    function GetRec(Index: Integer): TRESTDWRecord; overload;
+    procedure PutRec(Index: Integer; Item: TRESTDWRecord); overload;
+    procedure ClearAll;
+  public
+    destructor Destroy; override;
+    procedure Delete(Index: Integer); overload;
+    function Add(Item: TRESTDWRecord): Integer; overload;
+
+    property Items[Index: Integer]: TRESTDWRecord read GetRec write PutRec; default;
+  end;
 
   { TRESTDWMemTable }
 
   TRESTDWMemTable = class(TDataSet, IRESTDWMemTable)
-  protected
-    FRecords : TList;
+  private
+    FAbout : TRESTDWAboutInfo;
+    FRecords : TRecordList;
 
     // status
     FIsTableOpen: Boolean;
@@ -169,8 +189,7 @@ type
 
     // record data
     FRecordSize, // the size of the actual data
-    FRecordBufferSize, // data + housekeeping (TRecInfo)
-    FPosDelta : integer;
+    FRecordBufferSize : integer; // data + housekeeping (TRecInfo)
 
     FCurrentRecord, // current record (0 to FRecordCount - 1)
     FBofCrack, // before the first record (crack)
@@ -183,87 +202,95 @@ type
     FControlsDisabled : boolean; // filtro
     FFilterParser : TExprParser;
     FIndexFieldNames : string;
-    FCurrentRecordObj : TRESTDWRecord;
     FFilterRecordCount : LongInt;
     FStorageDataType : TRESTDWStorageBase;
     FCaseInsensitiveSort: Boolean;
     FIndexList : TStringList;
+    FLastID : integer;
 
+    FStatusRecord : TRESTDWRecordStatus;
+    FStatusRecordChanged : Boolean;
+
+    procedure setIndexFieldNames(const Value: string);
+  protected
     // create, close, and so on
     procedure InternalOpen; override;
     procedure InternalClose; override;
     function IsCursorOpen: Boolean; override;
     procedure CreateFields; override;
+    procedure OpenCursor(InfoQuery: Boolean); override;
 
     // custom functions
     procedure InternalInitFieldDefs; override;
     function InternalRecordCount: Longint; virtual;
     procedure InternalPreOpen; virtual;
     procedure InternalAfterOpen; virtual;
-    procedure InternalLoadCurrentRecord(Buffer: TRESTDWBuffer); virtual;
 
     // memory management
     function AllocRecordBuffer: TRESTDWBuffer; override;
     procedure InternalInitRecord(Buffer: TRESTDWBuffer); override;
-    procedure FreeRecordBuffer(var Buffer: TRESTDWBuffer); override;
+    procedure FreeRecordBuffer(var ABuffer: TRESTDWBuffer); override;
     function GetRecordSize: Word; override;
-    function GetActiveBuffer(out Buffer: TRESTDWBuffer): Boolean;
+    function GetActiveBuffer(var Buffer: TRESTDWBuffer): Boolean;
+    procedure ClearCalcFields(Buffer: TRecordBuffer); override;
 
     // movement and optional navigation (used by grids)
     function GetRecord(Buffer: TRESTDWBuffer; GetMode: TGetMode;
       DoCheck: Boolean): TGetResult; override;
     procedure InternalFirst; override;
     procedure InternalLast; override;
-    function GetRecNo: Longint; override;
-    function GetRecordCount: integer; override;
+    function GetRecNo: integer; override;
+    function GetRecordCount: Integer; override;
     procedure SetRecNo(Value: Integer); override;
 
     // filter
     function FilterRecord(Buffer : TRESTDWBuffer): Boolean;
     procedure SetFiltered(Value: Boolean); override;
+    procedure SetFilterText(const Value: string); override;
 
-    {$IFDEF FPC}
+    // events
+    {$IFDEF RESTDWLAZARUS}
       procedure DataEvent(Event: TDataEvent; Info: Ptrint); override;
     {$ELSE}
-      {$IF CompilerVersion < 21}
+      {$IFNDEF DELPHIXEUP}
         procedure DataEvent(Event: TDataEvent; Info: Longint); override;
       {$ELSE}
         procedure DataEvent(Event: TDataEvent; Info: NativeInt); override;
-      {$IFEND}
+      {$ENDIF}
     {$ENDIF}
-
-    procedure SetFilterText(const Value: string); override;
 
     // parser
     function ParserGetVariableValue(Sender: TObject; const VarName: string; var Value: Variant): Boolean; virtual;
 
     // bookmarks
+    function BookmarkValid(ABookmark: TBookmark): Boolean; override;
     procedure InternalGotoBookmark(ABookmark: Pointer); override;
     procedure InternalSetToRecord(Buffer: TRESTDWBuffer); override;
+
     procedure SetBookmarkData(Buffer: TRESTDWBuffer; Data: Pointer); override;
     procedure GetBookmarkData(Buffer: TRESTDWBuffer; Data: Pointer); override;
-    {$IF (NOT DEFINED(FPC)) AND (CompilerVersion >= 21)}
+    {$IFDEF DELPHIXEUP}
       procedure GetBookmarkData(Buffer: TRESTDWBuffer; Data: TBookmark); override;
-    {$IFEND}
+    {$ENDIF}
     procedure SetBookmarkFlag(Buffer: TRESTDWBuffer; Value: TBookmarkFlag); override;
     function GetBookmarkFlag(Buffer: TRESTDWBuffer): TBookmarkFlag; override;
 
     // editing (dummy vesions)
     procedure InternalDelete; override;
 
-    {$IF (NOT DEFINED(FPC)) AND (CompilerVersion >= 21)}
+    {$IFDEF DELPHIXEUP}
       procedure InternalAddRecord(Buffer: TRecBuf; Append: Boolean); override;
       procedure InternalAddRecord(Buffer: TRESTDWBuffer; Append: Boolean); override;
-    {$IFEND}
+    {$ENDIF}
     procedure InternalAddRecord(Buffer: Pointer; AAppend: Boolean); override;
 
     procedure InternalPost; override;
     procedure DoAfterPost; override;
 
     // fields
-    {$IF (NOT DEFINED(FPC)) AND (CompilerVersion >= 21)}
+    {$IFDEF DELPHIXEUP}
       procedure SetFieldData(Field: TField; Buffer: TValueBuffer); overload; override;
-    {$IFEND}
+    {$ENDIF}
     procedure SetFieldData(Field: TField; Buffer: Pointer); overload; override;
 
     // other
@@ -283,13 +310,11 @@ type
     // IRESTDWMenTable - interface
     function GetDataset: TDataset;
     function GetRecordObj(idx : integer) : TRESTDWRecord;
-    function GetFieldSize(idx : integer) : integer; overload;
     procedure AddNewRecord(rec : TRESTDWRecord);
     procedure AddBlobList(blob : PRESTDWBlobField);
+    function GetFieldSize(idx : integer) : integer; overload;
     function GetFieldSize(fdname : string) : integer; overload;
     function GetFieldType(fdname : string) : TFieldType;
-  private
-    procedure setIndexFieldNames(const Value: string);
   protected
     function GetRecSize : integer;
     function GetFieldOffsets(idx : integer) : integer;
@@ -302,10 +327,20 @@ type
     constructor Create(AOwner : TComponent); override;
     destructor Destroy; override;
 
-    {$IF (NOT DEFINED(FPC)) AND (CompilerVersion >= 21)}
+    // locate
+    function Locate(const KeyFields: string; const KeyValues: Variant;
+      Options: TLocateOptions): Boolean; override;
+    function Lookup(const KeyFields: string; const KeyValues: Variant;
+      const ResultFields: string): Variant; override;
+
+    {$IFDEF DELPHIXEUP}
       function GetFieldData(Field: TField; var Buffer: TValueBuffer): Boolean; override;
-    {$IFEND}
+    {$ENDIF}
     function GetFieldData(Field: TField; Buffer: Pointer): Boolean; override;
+
+    // status - Delta
+    procedure SetRecordStatus(rec_status : TRESTDWRecordStatus);
+    function GetRecordStatus : TRESTDWRecordStatus;
 
     // blobs
     function CreateBlobStream(Field: TField; Mode: TBlobStreamMode): TStream; override;
@@ -354,32 +389,104 @@ type
     property OnNewRecord;
     property OnPostError;
 
+    property AboutInfo : TRESTDWAboutInfo read FAbout write FAbout stored False;
     property IndexFieldNames : string read FIndexFieldNames write setIndexFieldNames;
   end;
 
 implementation
 
 uses
+  {$IFDEF RESTDWLAZARUS}
+    bufstream,
+  {$ENDIF}
   uRESTDWStorageBin;
+
+{ TRecordList }
+
+function TRecordList.GetRec(Index : Integer) : TRESTDWRecord;
+begin
+  Result := nil;
+  if (Index < Self.Count) and (Index > -1) then
+    Result := TRESTDWRecord(TList(Self).Items[Index]^);
+end;
+
+procedure TRecordList.PutRec(Index : Integer; Item : TRESTDWRecord);
+begin
+  if (Index < Self.Count) and (Index > -1) then
+    TRESTDWRecord(TList(Self).Items[Index]^) := Item;
+end;
+
+procedure TRecordList.ClearAll;
+Var
+  i : integer;
+Begin
+  i := Count - 1;
+  while i > -1 Do Begin
+    Delete(I);
+    Dec(I);
+  end;
+  inherited Clear;
+end;
+
+destructor TRecordList.Destroy;
+begin
+  ClearAll;
+  inherited Destroy;
+end;
+
+procedure TRecordList.Delete(Index : Integer);
+begin
+  if (Index > -1) And (Count > Index) then Begin
+    try
+      if Assigned(TList(Self).Items[Index]) then begin
+        if Assigned(TRESTDWRecord(TList(Self).Items[Index]^)) then begin
+          {$IF Defined(RESTDWLAZARUS) OR not Defined(DELPHI10_4UP)}
+          FreeAndNil(TList(Self).Items[Index]^);
+          {$ELSE}
+          FreeAndNil(TRESTDWRecord(TList(Self).Items[Index]^));
+          {$IFEND}
+        end;
+      end;
+      {$IFDEF RESTDWLAZARUS}
+        Dispose(PRESTDWRecord(TList(Self).Items[Index]));
+      {$ELSE}
+        Dispose(TList(Self).Items[Index]);
+      {$ENDIF}
+    except
+
+    end;
+    TList(Self).Delete(Index);
+  end;
+end;
+
+function TRecordList.Add(Item : TRESTDWRecord) : Integer;
+var
+  vItem: PRESTDWRecord;
+Begin
+  New(vItem);
+  vItem^ := Item;
+  Result := inherited Add(vItem);
+end;
 
 procedure TRESTDWMemTable.InternalOpen;
 begin
-  if FIsTableOpen then
-    Exit;
-
   InternalPreOpen; // custom method for subclasses
 
-  // initialize the field definitions
-  // (another virtual abstract method of TDataSet)
-  InternalInitFieldDefs;
+  FieldDefs.Updated := False;
+  FieldDefs.Update;
+  {$IFNDEF RESTDWLAZARUS}
+  FieldDefList.Update;
+  {$ENDIF}
 
   // if there are no persistent field objects,
   // create the fields dynamically
-  if DefaultFields then
+  {$IFNDEF HAS_AUTOMATIC_DB_FIELDS}
+    if DefaultFields then
+  {$ENDIF !HAS_AUTOMATIC_DB_FIELDS}
     CreateFields;
 
   // connect the TField objects with the actual fields
-  BindFields (True);
+  BindFields(True);
 
   InternalAfterOpen; // custom method for subclasses
 
@@ -387,27 +494,33 @@ begin
   FBofCrack := -1;
   FEofCrack := InternalRecordCount;
   FCurrentRecord := FBofCrack;
-  FPosDelta := FRecordSize;
-  FRecordSize := FRecordSize + SizeOf(Byte);
+  FRecordSize := FRecordSize + CalcFieldsSize;
   FRecordBufferSize := FRecordSize + SizeOf(Pointer);
   BookmarkSize := SizeOf(Integer);
 
   // everything OK: table is now open
-  FIsTableOpen := True;
+  InternalFirst;
 end;
 
 procedure TRESTDWMemTable.InternalClose;
 var
   vBlock : Boolean;
 begin
+  if not FIsTableOpen then
+    Exit;
+
+  ClearBuffers;
   vBlock := FBlockEvents;
-  
+  FBlockEvents := False;
+
   EmptyTable;
 
   // disconnet field objects
-  BindFields(False);
+//  BindFields(False);
   // destroy field object (if not persistent)
-  if DefaultFields then
+  {$IFNDEF HAS_AUTOMATIC_DB_FIELDS}
+    if DefaultFields then
+  {$ENDIF !HAS_AUTOMATIC_DB_FIELDS}
     DestroyFields;
 
   // close the file
@@ -450,7 +563,7 @@ begin
   Close;
   vFiltered := Filtered;
   Filtered := False;
-  
+
   FBlockEvents := True;
 
   if Assigned(FStorageDataType) then
@@ -470,6 +583,220 @@ begin
 
   Filtered := vFiltered;
   RefreshStates;
+end;
+
+function TRESTDWMemTable.Locate(const KeyFields: string;
+  const KeyValues: Variant; Options: TLocateOptions): Boolean;
+var
+  vFieldCount : Integer;
+  vFields : TList;
+  vField : TField; // else BAD mem leak on 'Field.asString'
+  SaveState: TDataSetState;
+  I: Integer;
+  vRec : TRESTDWRecord;
+  vBuffer : PRESTDWBuffer;
+  vBook : Integer;
+  vBookmark : TBookMark;
+
+  function CompareField(Field: TField; Value: Variant): Boolean; { BG }
+  var
+    S: string;
+    vDWFieldType : Byte;
+  begin
+    vDWFieldType := FieldTypeToDWFieldType(Field.DataType);
+    if vDWFieldType in [dwftString, dwftFixedChar, dwftWideString, dwftFixedWideChar] then begin
+      if Value = Null then begin
+        Result := Field.IsNull;
+      end
+      else begin
+        S := Field.AsString;
+        Result := AnsiSameStr(S, Value);
+      end;
+    end
+    else begin
+      Result := (Field.Value = Value);
+    end;
+  end;
+
+  function CompareRecord: Boolean;
+  var
+    ii : Integer;
+  begin
+    if vFieldCount = 1 then begin
+      vField := TField(Fields[0]);
+      Result := CompareField(vField, KeyValues);
+    end
+    else begin
+      Result := True;
+      for ii := 0 to vFieldCount - 1 do begin
+        vField := TField(vFields[ii]);
+        Result := Result and CompareField(vField, KeyValues[ii]);
+        if not Result then
+          Break;
+      end;
+    end;
+  end;
+begin
+  DoBeforeScroll;
+
+  Result := False;
+  CheckBrowseMode;
+  if IsEmpty then begin
+    Resync([]);
+    Exit;
+  end;
+  vFields := TList.Create;
+  try
+    GetFieldList(vFields, KeyFields);
+    vFieldCount := vFields.Count;
+    Result := CompareRecord;
+    if Result then begin
+      Resync([]);
+      Exit;
+    end
+    else begin
+      SaveState := SetTempState(dsCalcFields);
+      try
+        try
+          vBuffer := PRESTDWBuffer(TempBuffer);
+          for i := FCurrentRecord to FRecords.Count - 1 Do Begin
+            vRec := GetRecordObj(i);
+            vRec.CopyBuffer(vBuffer^);
+            CalculateFields(vBuffer^);
+            Result := CompareRecord;
+            if Result Then
+              Break;
+          end;
+
+          if not Result then begin
+            for i := 0 to FCurrentRecord - 1 Do Begin
+              vRec := GetRecordObj(i);
+              vRec.CopyBuffer(vBuffer^);
+              CalculateFields(vBuffer^);
+              Result := CompareRecord;
+              if Result Then
+                Break;
+            end;
+          end;
+        finally
+          if Result then begin
+            {$IFDEF DELPHIXEUP}
+               SetLength(vBookmark,BookmarkSize);
+               Move(i,Pointer(@vBookmark[0])^,SizeOf(vBook));
+            {$ELSE}
+               SetLength(vBookmark,BookmarkSize);
+               Move(i,Pointer(@vBookmark[0])^,SizeOf(vBook));
+            {$ENDIF}
+          end;
+        end;
+      finally
+        RestoreState(SaveState);
+        if Result and Self.BookmarkValid(vBookmark) then begin
+          Self.Bookmark := vBookmark;
+          Resync([]);
+        end;
+        SetLength(vBookmark,0);
+      end;
+    end;
+  finally
+    FreeAndNil(vFields);
+  end;
+
+  if Result then begin
+    DataEvent(deDataSetChange, 0);
+    DoAfterScroll;
+  end;
+end;
+
+function TRESTDWMemTable.Lookup(const KeyFields: string;
+  const KeyValues: Variant; const ResultFields: string): Variant;
+var
+  vFieldCount : Integer;
+  vFields : TList;
+  vField : TField;
+  SaveState: TDataSetState;
+  I: Integer;
+  vMatched: Boolean;
+  vRec : TRESTDWRecord;
+  vBuffer : PRESTDWBuffer;
+
+  function CompareField(Field: TField; Value: Variant): Boolean; { BG }
+  var
+    S: string;
+    vDWFieldType : Byte;
+  begin
+    vDWFieldType := FieldTypeToDWFieldType(Field.DataType);
+    if vDWFieldType in [dwftString, dwftFixedChar, dwftWideString, dwftFixedWideChar] then begin
+      if Value = Null then begin
+        Result := Field.IsNull;
+      end
+      else begin
+        S := Field.AsString;
+        Result := AnsiSameStr(S, Value);
+      end;
+    end
+    else begin
+      Result := (Field.Value = Value);
+    end;
+  end;
+
+  function CompareRecord: Boolean;
+  var
+    ii : Integer;
+  begin
+    if vFieldCount = 1 then begin
+      vField := TField(vFields[0]);
+      Result := CompareField(vField, KeyValues);
+    end
+    else begin
+      Result := True;
+      for ii := 0 to vFieldCount - 1 do begin
+        vField := TField(vFields[ii]);
+        Result := Result and CompareField(vField, KeyValues[ii]);
+        if not Result then
+          Break;
+      end;
+    end;
+  end;
+
+Begin
+  Result := null;
+  CheckBrowseMode;
+  If IsEmpty Then
+    Exit;
+
+  vFields := TList.Create;
+  try
+    GetFieldList(vFields, KeyFields);
+    vFieldCount := vFields.Count;
+    vMatched := CompareRecord;
+    if vMatched then begin
+      Result := ToBytes(FieldValues[ResultFields])
+    end
+    else begin
+      SaveState := SetTempState(dsCalcFields);
+      try
+        try
+          vBuffer := PRESTDWBuffer(TempBuffer);
+          for i := 0 To FRecords.Count - 1 Do Begin
+            vRec := GetRecordObj(i);
+            vRec.CopyBuffer(vBuffer^);
+            CalculateFields(vBuffer^);
+            vMatched := CompareRecord;
+            if vMatched Then
+              Break;
+          end;
+        finally
+          if vMatched Then
+            Result := ToBytes(FieldValues[ResultFields]);
+        end;
+      finally
+        RestoreState(SaveState);
+      end;
+    end;
+  finally
+    FreeAndNil(vFields);
+  end;
 end;
 
 function TRESTDWMemTable.ParserGetVariableValue(Sender: TObject;
@@ -551,7 +878,7 @@ var
 begin
   for i := 0 to FieldDefs.Count - 1 do begin
     with FieldDefs.Items[I] do begin
-      {$IFDEF FPC}
+      {$IFDEF RESTDWLAZARUS}
         if DataType = ftTimeStamp then begin
           DataType := ftDateTime;
         end;
@@ -559,7 +886,18 @@ begin
     end;
   end;
 
-  inherited CreateFields;
+  if Fields.Count = 0 then
+    inherited CreateFields;
+end;
+
+procedure TRESTDWMemTable.OpenCursor(InfoQuery : Boolean);
+begin
+  // initialize the field definitions
+  // (another virtual abstract method of TDataSet)
+  InternalInitFieldDefs;
+
+  FIsTableOpen := True;
+  inherited OpenCursor(InfoQuery);
 end;
 
 procedure TRESTDWMemTable.CreateIndexList(const FieldNames: string);
@@ -609,11 +947,11 @@ begin
   else
     FIndexList.Clear;
 
-  {$IF (NOT DEFINED(FPC)) AND (CompilerVersion > 24)}
+  {$IFDEF DELPHIXE4UP}
     vPosFinal := High(FieldNames);
   {$ELSE}
     vPosFinal := Length(FieldNames);
-  {$IFEND}
+  {$ENDIF}
 
   vFieldName := '';
   vOrder := '';
@@ -637,7 +975,7 @@ begin
   addFieldList;
 end;
 
-procedure TRESTDWMemTable.InternalGotoBookmark (ABookmark: Pointer);
+procedure TRESTDWMemTable.InternalGotoBookmark(ABookmark: Pointer);
 var
   ReqBookmark: Integer;
 begin
@@ -653,10 +991,10 @@ var
   ReqBookmark: Integer;
 begin
   ReqBookmark := PRESTDWRecInfo(Buffer + FRecordSize)^.Bookmark;
-  InternalGotoBookmark (@ReqBookmark);
+  InternalGotoBookmark(@ReqBookmark);
 end;
 
-{$IF (NOT DEFINED(FPC)) AND (CompilerVersion >= 21)}
+{$IFDEF DELPHIXEUP}
   procedure TRESTDWMemTable.GetBookmarkData(Buffer: TRESTDWBuffer; Data: TBookmark);
   var
     vBook : integer;
@@ -664,7 +1002,7 @@ end;
     vBook := PRESTDWRecInfo(Buffer + FRecordSize)^.Bookmark;
     Move(vBook,Pointer(@Data[0])^,SizeOf(vBook)); // XE
   end;
-{$IFEND}
+{$ENDIF}
 
 function TRESTDWMemTable.GetBookmarkFlag(Buffer: TRESTDWBuffer): TBookmarkFlag;
 begin
@@ -674,35 +1012,37 @@ end;
 function TRESTDWMemTable.GetFieldData(Field: TField; Buffer: Pointer): Boolean;
 var
   SrcBuffer: TRESTDWBuffer;
+
   vNull : boolean;
   I : integer;
   J : integer;
 
   vDWDataType : Byte;
+  vByte : Byte;
 
   vCurrency : Currency;
   vDouble : Double;
-  vByte : Byte;
   vFmtBCD : tBCD;
   vTimeStamp : TTimeStamp;
   vDateTimeRec : TDateTimeRec;
   vString : AnsiString;
-  {$IFNDEF FPC}
+  {$IFNDEF RESTDWLAZARUS}
     vSQLTimeStamp : TSQLTimeStamp;
   {$ENDIF}
-  {$IF (NOT DEFINED(FPC)) AND (CompilerVersion >= 21)}
+  {$IFDEF DELPHIXEUP}
     vTimeStampOffSet : TSQLTimeStampOffSet;
-  {$IFEND}
+  {$ENDIF}
 begin
   I := Field.FieldNo - 1;
   Result := GetActiveBuffer(SrcBuffer);
+
   if not Result then
     Exit;
 
   if I >= 0 then begin
     Inc(SrcBuffer,FFieldOffsets[I]);
     Move(SrcBuffer^,vNull,SizeOf(Boolean));
-    Inc(SrcBuffer);
+    Inc(SrcBuffer,SizeOf(Boolean));
 
     Result := vNull;
     if Result and Assigned(Buffer) then begin
@@ -717,7 +1057,7 @@ begin
       end
       else if vDWDataType = dwftTimeStamp then begin
         Move(SrcBuffer^,vDouble,SizeOf(vDouble));
-        {$IFDEF FPC}
+        {$IFDEF RESTDWLAZARUS}
           vTimeStamp := DateTimeToTimeStamp(vDouble);
           Move(vTimeStamp,Buffer^,SizeOf(vTimeStamp));
         {$ELSE}
@@ -737,7 +1077,7 @@ begin
         Move(vDateTimeRec,Buffer^,SizeOf(vDateTimeRec));
       end
       else if vDWDataType = dwftTimeStampOffset then begin
-        {$IF (NOT DEFINED(FPC)) AND (CompilerVersion >= 21)}
+        {$IFDEF DELPHIXEUP}
           Move(SrcBuffer^,vDouble,SizeOf(vDouble));
           Inc(SrcBuffer,SizeOf(vDouble));
 
@@ -755,7 +1095,7 @@ begin
           Dec(SrcBuffer,J);
 
           Move(vTimeStampOffSet,Buffer^,SizeOf(vTimeStampOffSet));
-        {$IFEND}
+        {$ENDIF}
       end
       else if vDWDataType = dwftWideString then begin
         SetLength(vString,J);
@@ -765,7 +1105,7 @@ begin
       else begin
         Move(SrcBuffer^,Buffer^,J);
       end;
-      Dec(SrcBuffer,FFieldOffsets[I]+1);								
+//      Dec(SrcBuffer,FFieldOffsets[I]+SizeOf(Boolean));
     end;
   end
   // Calculated, Lookup
@@ -779,6 +1119,7 @@ begin
       J := FFieldSize[I];
       Move(SrcBuffer^,Buffer^,J);
     end;
+//    Dec(SrcBuffer,FFieldOffsets[I]+SizeOf(Boolean));
   end;
 end;
 
@@ -801,46 +1142,46 @@ begin
     Result := vField.Index;
 end;
 
-{$IF (NOT DEFINED(FPC)) AND (CompilerVersion >= 21)}
-  function TRESTDWMemTable.GetFieldData(Field: TField; var Buffer: TValueBuffer): Boolean;
-  begin
-    Result := GetFieldData(Field,Pointer(Buffer));
-  end;
-{$IFEND}
+{$IFDEF DELPHIXEUP}
+function TRESTDWMemTable.GetFieldData(Field: TField; var Buffer: TValueBuffer): Boolean;
+begin
+  Result := GetFieldData(Field,Pointer(Buffer));
+end;
+{$ENDIF}
 
 procedure TRESTDWMemTable.SetBookmarkFlag (Buffer: TRESTDWBuffer; Value: TBookmarkFlag);
 begin
   PRESTDWRecInfo(Buffer + FRecordSize)^.BookmarkFlag := Value;
 end;
 
-{$IF (NOT DEFINED(FPC)) AND (CompilerVersion >= 21)}
-  procedure TRESTDWMemTable.SetFieldData(Field: TField; Buffer: TValueBuffer);
-  begin
-    SetFieldData(Field,Pointer(Buffer));
-  end;
-{$IFEND}
+{$IFDEF DELPHIXEUP}
+procedure TRESTDWMemTable.SetFieldData(Field: TField; Buffer: TValueBuffer);
+begin
+  SetFieldData(Field,Pointer(Buffer));
+end;
+{$ENDIF}
 
 procedure TRESTDWMemTable.SetFieldData(Field: TField; Buffer: Pointer);
 var
   DestBuffer: TRESTDWBuffer;
+
   vNull : boolean;
-  I,J: integer;
+  I,J : integer;
 
   vDWDataType : Byte;
+  vByte : Byte;
 
   vCurrency : Currency;
   vDouble : Double;
-  vByte : Byte;
   vFmtBCD : tBCD;
   vDateTimeRec : TDateTimeRec;
   vTimeStamp : TTimeStamp;
-  {$IFNDEF FPC}
+  {$IFNDEF RESTDWLAZARUS}
     vSQLTimeStamp : TSQLTimeStamp;
   {$ENDIF}
-
-  {$IF (NOT DEFINED(FPC)) AND (CompilerVersion >= 21)}
+  {$IFDEF DELPHIXEUP}
     vTimeStampOffSet : TSQLTimeStampOffSet;
-  {$IFEND}
+  {$ENDIF}
 begin
   I:= Field.FieldNo - 1;
   if not GetActiveBuffer(DestBuffer) then
@@ -849,14 +1190,17 @@ begin
   if I >= 0 then begin
     if State in [dsEdit, dsInsert, dsNewValue] then
       Field.Validate(Buffer);
+
     Inc(DestBuffer,FFieldOffsets[I]);
     vNull := not (Buffer = nil);
     Move(vNull,DestBuffer^,SizeOf(Boolean));
-    Inc(DestBuffer);
+    Inc(DestBuffer,SizeOf(Boolean));
     if Buffer <> nil then begin
       J := FFieldSize[I];
 
       vDWDataType := FieldTypeToDWFieldType(Field.DataType);
+      if vDWDataType in [dwftWideString, dwftFixedWideChar, dwftFixedChar, dwftString] then
+        Dec(J);
 
       if vDWDataType = dwftFMTBcd then begin
         Move(Buffer^,vFmtBCD,SizeOf(tBCD));
@@ -864,7 +1208,7 @@ begin
         Move(vCurrency,DestBuffer^,J);
       end
       else if vDWDataType = dwftTimeStamp then begin
-        {$IFDEF FPC}
+        {$IFDEF RESTDWLAZARUS}
           Move(Buffer^,vTimeStamp,SizeOf(vTimeStamp));
           vDouble := TimeStampToDateTime(vTimeStamp);
         {$ELSE}
@@ -888,7 +1232,7 @@ begin
             end;
         else
           try
-            {$IFDEF FPC}
+            {$IFDEF RESTDWLAZARUS}
               vTimeStamp := MSecsToTimeStamp(Comp(vDateTimeRec.DateTime));
             {$ELSE}
               vTimeStamp := MSecsToTimeStamp(vDateTimeRec.DateTime);
@@ -902,7 +1246,7 @@ begin
         Move(vDouble,DestBuffer^,SizeOf(vDouble));
       end
       else if vDWDataType = dwftTimeStampOffset then begin
-        {$IF (NOT DEFINED(FPC)) AND (CompilerVersion >= 21)}
+        {$IFDEF DELPHIXEUP}
           Move(Buffer^,vTimeStampOffSet,SizeOf(vTimeStamp));
           vDouble := SQLTimeStampOffsetToDateTime(vTimeStampOffSet);
           Move(vDouble,DestBuffer^,SizeOf(vDouble));
@@ -916,11 +1260,12 @@ begin
           Move(vByte,DestBuffer^,SizeOf(vByte));
           Inc(DestBuffer,SizeOf(vByte));
           Dec(DestBuffer,J);
-        {$IFEND}
+        {$ENDIF}
       end
       else begin
         Move(Buffer^,DestBuffer^,J);
       end;
+//      Dec(DestBuffer,FFieldOffsets[I]+SizeOf(Boolean));
     end;
   end
   else begin
@@ -933,17 +1278,18 @@ begin
       J := FFieldSize[I];
       Move(Buffer^,DestBuffer^,J);
     end;
+//    Dec(DestBuffer,FFieldOffsets[I]+SizeOf(Boolean));
   end;
 
-  {$IFDEF FPC}
-    DataEvent(deFieldChange, Ptrint(Field));
-  {$ELSE}
-    {$IF CompilerVersion < 21}
-      DataEvent(deFieldChange, Longint(Field));
+  if not (State in [dsCalcFields, dsFilter, dsNewValue]) then begin
+    {$IF Defined(RESTDWLAZARUS)}
+      DataEvent(deFieldChange, Ptrint(Field));
+    {$ELSEIF not Defined(DELPHIXEUP)}
+        DataEvent(deFieldChange, Longint(Field));
     {$ELSE}
-      DataEvent(deFieldChange, NativeInt(Field));
+        DataEvent(deFieldChange, NativeInt(Field));
     {$IFEND}
-  {$ENDIF}
+  end;
 end;
 
 procedure TRESTDWMemTable.SetFiltered(Value: Boolean);
@@ -974,7 +1320,7 @@ procedure TRESTDWMemTable.SetFilterText(const Value: string);
     FreeAndNil(FFilterParser);
     if Filter <> '' then begin
       FFilterParser := TExprParser.Create;
-      FFilterParser.OnGetVariable := {$IFDEF FPC}@{$ENDIF}ParserGetVariableValue;
+      FFilterParser.OnGetVariable := {$IFDEF RESTDWLAZARUS}@{$ENDIF}ParserGetVariableValue;
       if foCaseInsensitive in FilterOptions then
         FFilterParser.Expression := AnsiUpperCase(Filter)
       else
@@ -1020,28 +1366,25 @@ begin
   FCurrentRecord := FEofCrack;
 end;
 
-procedure TRESTDWMemTable.InternalLoadCurrentRecord(Buffer: TRESTDWBuffer);
+function TRESTDWMemTable.GetActiveBuffer(var Buffer: TRESTDWBuffer): Boolean;
 begin
-  FCurrentRecordObj := TRESTDWRecord(FRecords.Items[FCurrentRecord]);
-  FCurrentRecordObj.CopyBuffer(Pointer(Buffer));
-  with PRESTDWRecInfo(Buffer + FRecordSize)^ do begin
-    BookmarkFlag := bfCurrent;
-    Bookmark := FCurrentRecord;
-  end;
-end;
-
-function TRESTDWMemTable.GetActiveBuffer(out Buffer: TRESTDWBuffer): Boolean;
-begin
-  Buffer := nil;
   case State of
     dsEdit       : Buffer := TRESTDWBuffer(ActiveBuffer);
     dsInsert     : Buffer := TRESTDWBuffer(ActiveBuffer);
     dsFilter     : Buffer := TRESTDWBuffer(FFilterBuffer);
     dsCalcFields : Buffer := TRESTDWBuffer(CalcBuffer);
-    else if not IsEmpty then
-      Buffer := TRESTDWBuffer(ActiveBuffer);
+    else
+      if not IsEmpty then
+        Buffer := TRESTDWBuffer(ActiveBuffer)
+      else
+        Buffer := nil;
   end;
   Result := Buffer <> nil;
+end;
+
+procedure TRESTDWMemTable.ClearCalcFields(Buffer : TRecordBuffer);
+begin
+//  FillChar(Buffer[RecordSize], CalcFieldsSize, 0);
 end;
 
 function TRESTDWMemTable.GetActiveRecord: TRESTDWBuffer;
@@ -1050,17 +1393,17 @@ begin
 end;
 
 procedure TRESTDWMemTable.GetBookmarkData(Buffer: TRESTDWBuffer; Data: Pointer);
-{$IF (DEFINED(FPC)) or (CompilerVersion < 21)}
+{$IF Defined(RESTDWLAZARUS) or not Defined(DELPHIXEUP)}
   var
     vBook : integer;
 {$IFEND}
 begin
-  {$IF (NOT DEFINED(FPC)) AND (CompilerVersion >= 21)}
+  {$IFDEF DELPHIXEUP}
     GetBookmarkData(Buffer,TBookmark(Data));
   {$ELSE}
     vBook := PRESTDWRecInfo(Buffer + FRecordSize)^.Bookmark;
     Move(vBook,Data^,SizeOf(vBook)); // FPC/D7
-  {$IFEND}
+  {$ENDIF}
 end;
 
 procedure TRESTDWMemTable.SaveToFile(AFileName: string);
@@ -1092,37 +1435,46 @@ begin
   clearBlobs;
   clearRecords;
 
+  SetState(vState);
+  DataEvent(deDataSetChange, 0);
+
   SetLength(FFieldOffsets,0);
   SetLength(FFieldSize,0);
   FRecordCount := 0;
   FFilterRecordCount := -1;
   FCurrentRecord := -1;
-  FRecordBufferSize := 0;
+//  FRecordBufferSize := 0;
   FRecordSize := 0;
-  FPosDelta := 0;
-
-  SetState(vState);
-  DataEvent(deDataSetChange, 0);
+  FFilterBuffer := nil;
 end;
 
 procedure TRESTDWMemTable.SaveToStream(AStream: TStream);
 var
-  stor : TRESTDWStorageBin;
+  vStor : TRESTDWStorageBase;
 begin
-  stor := TRESTDWStorageBin.Create(nil);
+  if Assigned(FStorageDataType) then
+    vStor := FStorageDataType
+  else
+    vStor := TRESTDWStorageBin.Create(nil);
+
   try
-    stor.SaveToStream(Self,AStream);
+    vStor.SaveToStream(Self,AStream);
   finally
-    stor.Free;
+    if not Assigned(FStorageDataType) then
+      vStor.Free;
   end;
 end;
 
 procedure TRESTDWMemTable.SetBookmarkData(Buffer: TRESTDWBuffer; Data: Pointer);
 begin
-  PRESTDWRecInfo(Buffer + FRecordSize)^.Bookmark := Integer(Data^);
+  {$IFDEF DELPHIXEUP}
+    SetBookmarkData(Buffer,TBookmark(Data));
+  {$ELSE}
+    PRESTDWRecInfo(Buffer + FRecordSize)^.Bookmark := Integer(Data^);
+  {$ENDIF}
 end;
 
-function TRESTDWMemTable.GetRecordCount: integer;
+function TRESTDWMemTable.GetRecordCount: Integer;
 begin
   Result := 0;
   if State <> dsInactive then
@@ -1161,7 +1513,7 @@ begin
   Result := FFilterRecordCount;
 end;
 
-function TRESTDWMemTable.GetRecNo: Longint;
+function TRESTDWMemTable.GetRecNo : integer;
 begin
   UpdateCursorPos;
   if FCurrentRecord < 0 then
@@ -1180,6 +1532,20 @@ begin
   end;
 end;
 
+procedure TRESTDWMemTable.SetRecordStatus(rec_status: TRESTDWRecordStatus);
+var
+  vRec : TRESTDWRecord;
+begin
+  if not (State in [dsInsert]) then begin
+    vRec := GetRecordObj(FCurrentRecord);
+    vRec.Status := rec_status;
+  end
+  else begin
+    FStatusRecord := rec_status;
+    FStatusRecordChanged := True;
+  end;
+end;
+
 procedure TRESTDWMemTable.Sort;
 var
   vPos: TBookmark;
@@ -1187,14 +1553,14 @@ begin
   if Active and (FRecords <> nil) and (FRecords.Count > 0) then begin
     vPos := Bookmark;
     try
-      {$IFDEF FPC}
+      {$IFDEF RESTDWLAZARUS}
       QuickSort(0, FRecords.Count - 1, @CompareRecords);
       {$ELSE}
       QuickSort(0, FRecords.Count - 1, CompareRecords);
       {$ENDIF}
       SetBufListSize(0);
       try
-        SetBufListSize(BufferCount + 1);
+        SetBufListSize(BufferCount+1);
       except
         SetState(dsInactive);
         CloseCursor;
@@ -1203,14 +1569,14 @@ begin
     finally
       Bookmark := vPos;
     end;
-//    Resync([]);
+    Resync([]);
   end;
 end;
 
 procedure TRESTDWMemTable.SortOnFields(const FieldNames: string;
   CaseInsensitive : Boolean);
 begin
-  if not Active then
+  if (not Active) or (State = dsInactive) then
     Exit;
 
   CheckBrowseMode;
@@ -1226,7 +1592,10 @@ begin
   try
     Sort;
   except
-    raise;
+    on e : Exception do begin
+      FreeIndexList;
+      raise Exception.Create(e.Message);
+    end;
   end;
 end;
 
@@ -1247,6 +1616,8 @@ end;
 function TRESTDWMemTable.GetRecord(Buffer: TRESTDWBuffer; GetMode: TGetMode; DoCheck: Boolean): TGetResult;
 var
   vAccepted : boolean;
+  vRec : TRESTDWRecord;
+  vBuf : TRESTDWBuffer;
 begin
   Result := grOK; // default
   vAccepted := True;
@@ -1268,16 +1639,26 @@ begin
           Result := grError;
     end;
     if Result = grOK then begin
-      InternalLoadCurrentRecord(Buffer);
-      vAccepted := FCurrentRecordObj.Accept = 1;
-      if vAccepted then begin
-        GetCalcFields(Buffer);
-        //CalculateFields(Buffer);
-	  end;
+      vRec := GetRecordObj(FCurrentRecord);
+      vBuf := vRec.CopyBuffer;
+      Move(vBuf[0],Buffer[0],FRecordBufferSize);
+      Freemem(vBuf);
+      vAccepted := vRec.Accept = 1;
 
-      if (GetMode = gmCurrent) and not vAccepted then
-        Result:=grError;
+      // cuidando com isso... rsrsrsrsr
+      // esse set bookmark faz com que a grid nao fique louca
+      // louca no sentido de ela nao ter fim e nem inicio
+      // fica "girando" do primeiro volta pro ultimo
+      with PRESTDWRecInfo(Buffer + FRecordSize)^ do begin
+        BookmarkFlag := bfCurrent;
+        Bookmark := FCurrentRecord;
+      end;
+      if vAccepted then
+        CalculateFields(Buffer);
     end;
+    if (GetMode = gmCurrent) and not vAccepted then begin
+      Result:=grError;
+    end;    
   until (Result <> grOK) or vAccepted;
 
   // load the data
@@ -1291,6 +1672,7 @@ var
   vField : TField;
   vFieldDef : TFieldDef;
   vBlock : boolean;
+  vDefName : string;
 
   function buscaFieldDef(fdname : string) : TFieldDef;
   var
@@ -1317,7 +1699,34 @@ begin
   FBlockEvents := False;
 
   if Fields.Count > 0 then begin
-    {$IFNDEF FPC}
+    // fields defs é obrigatorio para fields fkData
+    for i := 0 to Fields.Count-1 do begin
+      if Fields[i].FieldKind = fkData then begin
+        vFieldDef := buscaFieldDef(Fields[i].FieldName);
+        vDefName := Fields[i].FieldName;
+
+        {$IFNDEF RESTDWLAZARUS}
+          if vFieldDef = nil then begin
+            vFieldDef := buscaFieldDef(Fields[i].FullName);
+            vDefName := Fields[i].FullName;
+          end;
+        {$ENDIF}
+
+        if vFieldDef = nil then begin
+          vFieldDef := buscaFieldDef(Fields[i].DisplayName);
+          vDefName := Fields[i].DisplayName;
+        end;
+
+        if vFieldDef = nil then begin
+          vFieldDef := FieldDefs.AddFieldDef;
+          vFieldDef.Name := vDefName;
+          vFieldDef.DataType := Fields[i].DataType;
+          vFieldDef.Size := Fields[i].Size;
+          vFieldDef.Attributes := [faFixed];
+        end;
+      end;
+    end;
+    {$IFNDEF RESTDWLAZARUS}
       FieldOptions.AutoCreateMode := acCombineAlways;
       CreateFields;
       for i := 0 to FieldDefs.Count-1 do begin
@@ -1328,6 +1737,8 @@ begin
       k := FieldDefs.Count;
       for i := 0 to Fields.Count-1 do begin
         vFieldDef := buscaFieldDef(Fields[i].FieldName);
+        if vFieldDef = nil then
+          vFieldDef := buscaFieldDef(Fields[i].FullName);
         if vFieldDef = nil then
           vFieldDef := buscaFieldDef(Fields[i].DisplayName);
 
@@ -1340,7 +1751,7 @@ begin
     {$ELSE}
       for i := 0 to FieldDefs.Count-1 do begin
         vField := Fields.FindField(FieldDefs[i].Name);
-        if vField <> nil then
+        if vField = nil then
           FieldDefs[i].CreateField(Self);
       end;
       for i := 0 to FieldDefs.Count-1 do begin
@@ -1360,6 +1771,7 @@ begin
         end;
       end;
     {$ENDIF}
+
     SetLength(FFieldOffsets,Fields.Count);
     SetLength(FFieldSize,Fields.Count);
     for i := 0 to Fields.Count-1 do begin
@@ -1382,15 +1794,14 @@ begin
 
   FBlockEvents := vBlock;
 
-  {$IFNDEF FPC}
+  {$IFNDEF RESTDWLAZARUS}
     inherited;
   {$ENDIF}
 end;
 
 procedure TRESTDWMemTable.InternalInitRecord(Buffer: TRESTDWBuffer);
 begin
-  CheckActive;
-  FillChar(Buffer^, FRecordBufferSize, 0);
+  FillChar(Buffer^, FRecordSize, 0);
 end;
 
 function TRESTDWMemTable.calcFieldSize(ft: TFieldType; fs: integer): integer;
@@ -1458,6 +1869,8 @@ var
   i : integer;
   vBlob : PRESTDWBlobField;
 begin
+  if FBlobs = nil then
+    Exit;
   // eh mais rapido correr a lista ao contrario
   // pq nao tem que fazer deslocamento
   i := FBlobs.Count - 1;
@@ -1473,17 +1886,11 @@ begin
 end;
 
 procedure TRESTDWMemTable.clearRecords;
-var
-  i : integer;
 begin
-  // eh mais rapido correr a lista ao contrario
-  // pq nao tem que fazer deslocamento
-  i := FRecords.Count - 1;
-  while i >= 0 do begin
-    TObject(FRecords.Items[i]).Free;
-    FRecords.Delete(i);
-    i := i - 1;
-  end;
+  if FRecords = nil then
+    Exit;
+
+  FRecords.ClearAll;
 end;
 
 function TRESTDWMemTable.CompareRecords(Item1, Item2: TRESTDWRecord): Integer;
@@ -1510,8 +1917,8 @@ begin
       end
       else begin
         if VarIsStr(Data1) then begin
-          sData1 := AnsiString(Data1);
-          sData2 := AnsiString(Data2);
+          sData1 := VarToStr(Data1);
+          sData2 := VarToStr(Data2);
           if sData1 < sData2 then
             Result := -1
           else if sData1 > sData2 then
@@ -1525,16 +1932,6 @@ begin
         end;
       end;
 
-{
-      if (Data1 = null) and (Data2 <> null) then
-        Result := -1
-      else if (Data1 <> null) and (Data2 = null) then
-        Result := 1
-      else if (Data1 < Data2) then
-        Result := -1
-      else if (Data1 > Data2) then
-        Result := 1;
-}
       if vDescendingSort then
         Result := -Result;
 
@@ -1546,11 +1943,17 @@ end;
 
 constructor TRESTDWMemTable.Create(AOwner: TComponent);
 begin
-  inherited;
+  inherited Create(AOwner);
+  FStatusRecord := rsInserted;
+  FStatusRecordChanged := False;
   FRecordCount := 0;
   FFilterRecordCount := -1;
-  FRecords := TList.Create;
+  FRecords := TRecordList.Create;
   FBlobs := TList.Create;
+  FIndexList := nil;
+  FFilterBuffer := nil;
+  FFilterParser := nil;
+  FStorageDataType := nil;
 end;
 
 function TRESTDWMemTable.CreateBlobStream(Field: TField;
@@ -1559,15 +1962,13 @@ begin
   Result := TRESTDWBlobStream.Create(Self,Field as TBlobField,Mode);
 end;
 
-{$IFDEF FPC}
-  procedure TRESTDWMemTable.DataEvent(Event: TDataEvent; Info: Ptrint);
+{$IF Defined(RESTDWLAZARUS)}
+procedure TRESTDWMemTable.DataEvent(Event: TDataEvent; Info: Ptrint);
+{$ELSEIF not Defined(DELPHIXEUP)}
+procedure TRESTDWMemTable.DataEvent(Event: TDataEvent; Info: Longint);
 {$ELSE}
-  {$IF CompilerVersion < 21}
-    procedure TRESTDWMemTable.DataEvent(Event: TDataEvent; Info: Longint);
-  {$ELSE}
-    procedure TRESTDWMemTable.DataEvent(Event: TDataEvent; Info: NativeInt);
-  {$IFEND}
-{$ENDIF}
+procedure TRESTDWMemTable.DataEvent(Event: TDataEvent; Info: NativeInt);
+{$IFEND}
 var
   vControl : boolean;
 begin
@@ -1587,9 +1988,11 @@ begin
       if (Filtered) then begin
         RecalcFilters;
         First;
-      end;
+     end;
       SortOnFields(FIndexFieldNames,FCaseInsensitiveSort);
-      RefreshStates;
+      {$IFNDEF RESTDWLAZARUS}
+        RefreshStates;
+      {$ENDIF}
     end;
   end;
 
@@ -1601,15 +2004,20 @@ end;
 
 destructor TRESTDWMemTable.Destroy;
 begin
-  Close;
+  if Self.Active then
+    Self.Close;
 
   if FFilterParser <> nil then
     FreeAndNil(FFilterParser);
 
   FreeIndexList;
-  FRecords.Free;
-  FBlobs.Free;
-  inherited;
+  SetState(dsInactive);
+
+  EmptyTable;
+  FreeAndNil(FRecords);
+  FreeAndNil(FBlobs);
+
+  inherited Destroy;
 end;
 
 procedure TRESTDWMemTable.DoAfterPost;
@@ -1667,8 +2075,8 @@ begin
 
   vBuffer := Item.CopyBuffer;
   Inc(vBuffer,FFieldOffsets[i]);
-  Move(vBuffer^,vNull,Sizeof(vNull));
-  Inc(vBuffer,Sizeof(vNull));
+  Move(vBuffer^,vNull,Sizeof(Boolean));
+  Inc(vBuffer,Sizeof(Boolean));
 
   if vNull then begin // null invertido
     j := FFieldSize[i];
@@ -1744,7 +2152,7 @@ begin
     Result := null;
   end;
 
-  Dec(vBuffer,FFieldOffsets[i]+1);
+  Dec(vBuffer,FFieldOffsets[i]+SizeOf(Boolean));
   FreeMem(vBuffer);
 end;
 
@@ -1754,14 +2162,22 @@ begin
     FreeAndNil(FIndexList);
 end;
 
-procedure TRESTDWMemTable.FreeRecordBuffer (var Buffer: TRESTDWBuffer);
+procedure TRESTDWMemTable.FreeRecordBuffer(var ABuffer: TRESTDWBuffer);
 begin
-  FreeMem(Buffer);
+  Freemem(ABuffer);
 end;
 
 function TRESTDWMemTable.GetRecordSize: Word;
 begin
   Result := FRecordBufferSize;
+end;
+
+function TRESTDWMemTable.GetRecordStatus: TRESTDWRecordStatus;
+var
+  vRec : TRESTDWRecord;
+begin
+  vRec := GetRecordObj(FCurrentRecord);
+  Result := vRec.Status;
 end;
 
 function TRESTDWMemTable.GetRecSize: integer;
@@ -1782,7 +2198,18 @@ end;
 
 function TRESTDWMemTable.AllocRecordBuffer: TRESTDWBuffer;
 begin
-  GetMem(Result, FRecordBufferSize);
+  Result := AllocMem(FRecordBufferSize);
+  //GetMem(Result, FRecordBufferSize);
+  //FRecs.Add(@Result);
+end;
+
+function TRESTDWMemTable.BookmarkValid(ABookmark: TBookmark): Boolean;
+var
+  ReqBookmark: Integer;
+begin
+  Move(Pointer(ABookmark)^,ReqBookmark,BookmarkSize);
+  Result := (ABookmark <> nil) and Active and (ReqBookmark >= FBofCrack) and
+            (ReqBookmark < InternalRecordCount);
 end;
 
 procedure TRESTDWMemTable.InternalDelete;
@@ -1791,19 +2218,23 @@ var
   vBuffer : TRESTDWBuffer;
   Accept : boolean;
 begin
-  vRec := GetRecordObj(FCurrentRecord);
+  // Eloy - correção até revisão da equipe MemTable
+  //vRec := GetRecordObj(FCurrentRecord);
   FRecords.Delete(FCurrentRecord);
-  vRec.Free;
+  //vRec.Free;
 
   if FCurrentRecord >= FRecords.Count then
     Dec(FCurrentRecord);
+
   Accept := True;
   repeat
     if Filtered then begin
       vRec := GetRecordObj(FCurrentRecord);
-      vBuffer := vRec.CopyBuffer;
-      Accept := FilterRecord(vBuffer);
-      FreeMem(vBuffer);
+      if vRec <> nil then begin
+        vBuffer := vRec.CopyBuffer;
+        Accept := FilterRecord(vBuffer);
+        FreeMem(vBuffer);
+      end;
     end;
     if not Accept then
       Dec(FCurrentRecord);
@@ -1822,42 +2253,68 @@ end;
 
 procedure TRESTDWMemTable.InternalAddRecord(Buffer: Pointer; AAppend: Boolean);
 var
-  rec : TRESTDWRecord;
+  vRecPos: Integer;
+  vRec: TRESTDWRecord;
 begin
-  InternalLast;
-  rec := TRESTDWRecord.Create(Self);
-  Move(Buffer^,rec.FBuffer^,FRecordBufferSize);
-  FRecords.Add(rec);
-  Inc(FRecordCount);
+  if AAppend then begin
+    vRec := TRESTDWRecord.Create(Self);
+    FRecords.Add(vRec);
+    FCurrentRecord := FRecords.Count - 1;
+  end
+  else begin
+    if FCurrentRecord = -1 then
+      vRecPos := 0
+    else
+      vRecPos := FCurrentRecord;
+    vRec := TRESTDWRecord.Create(Self);
+    FRecords.Insert(vRecPos,vRec);
+    FCurrentRecord := vRecPos;
+  end;
+  Move(Buffer^,vRec.FBuffer^,FRecordBufferSize);
+  FRecordCount := FRecordCount + 1;
 end;
 
-{$IF (NOT DEFINED(FPC)) AND (CompilerVersion >= 21)}
-  procedure TRESTDWMemTable.InternalAddRecord(Buffer: TRecBuf; Append: Boolean);
-  begin
-    InternalAddRecord(Pointer(Buffer),Append);
-  end;
+{$IFDEF DELPHIXEUP}
+procedure TRESTDWMemTable.InternalAddRecord(Buffer: TRecBuf; Append: Boolean);
+begin
+  InternalAddRecord(Pointer(Buffer),Append);
+end;
 
-  procedure TRESTDWMemTable.InternalAddRecord(Buffer: TRESTDWBuffer;
-    Append: Boolean);
-  begin
-    InternalAddRecord(Pointer(Buffer),Append);
-  end;
-{$IFEND}
+procedure TRESTDWMemTable.InternalAddRecord(Buffer: TRESTDWBuffer;
+  Append: Boolean);
+begin
+  InternalAddRecord(Pointer(Buffer),Append);
+end;
+{$ENDIF}
 
 procedure TRESTDWMemTable.InternalPost;
 var
-  rec : TRESTDWRecord;
+  vRec : TRESTDWRecord;
 begin
+  CheckActive;
+  if not (State in [dsEdit, dsInsert]) then
+    Exit;
+
   inherited InternalPost;
 
-  CheckActive;
   if State = dsEdit then begin
-    rec := TRESTDWRecord(FRecords.Items[FCurrentRecord]);
-    Move(TRESTDWBuffer(ActiveBuffer)^,rec.FBuffer^,FRecordSize);
+    vRec := GetRecordObj(FCurrentRecord);
+    Move(TRESTDWBuffer(ActiveBuffer)^, vRec.FBuffer^, FRecordBufferSize);
+
+    if FStatusRecordChanged then
+      vRec.Status := FStatusRecord;
+
+    FStatusRecord := rsInserted;
+    FStatusRecordChanged := False;
+
+    if Filtered then begin
+      UpdateRecordsAccept(1);
+      RecalcFilters;
+    end;
   end
   else begin
     // always append
-    InternalAddRecord(TRESTDWBuffer(ActiveBuffer),True);
+    InternalAddRecord(ActiveBuffer, FCurrentRecord >= FRecords.Count);
   end;
 end;
 
@@ -1880,9 +2337,9 @@ end;
 { TRESTDWRecord }
 procedure TRESTDWRecord.clearBlobsFields;
 var
-  i, p : integer;
+  i : integer;
+  vFieldOffSet : integer;
   vBlobField : PRESTDWBlobField;
-  vField : TField;
   vBuf : TRESTDWBuffer;
   vBoolean : boolean;
   vDWFieldType : Byte;
@@ -1894,11 +2351,11 @@ begin
   while i < FDataset.Fields.Count do begin
     vDWFieldType := FieldTypeToDWFieldType(FDataset.Fields[i].DataType);
     if vDWFieldType in ftBlobTypes then begin
-      vBuf := TRESTDWBuffer(FBuffer);
-      p := FDataset.GetFieldOffsets(i);
-      Inc(vBuf,p);
+      vBuf := CopyBuffer;
+      vFieldOffSet := FDataset.GetFieldOffsets(i);
+      Inc(vBuf,vFieldOffSet);
       Move(vBuf^,vBoolean,SizeOf(vBoolean));
-      Inc(vBuf);
+      Inc(vBuf,SizeOf(Boolean));
 
       if vBoolean then begin
         Move(vBuf^,vBlobField,SizeOf(Pointer));
@@ -1914,7 +2371,8 @@ begin
           // ja foi destruido no clearBlobs do Dataset
         end;
       end;
-      Dec(vBuf,p+1);
+      Dec(vBuf,vFieldOffSet+SizeOf(Boolean));
+      Freemem(vBuf);
     end;
     i := i + 1;
   end;
@@ -1922,32 +2380,32 @@ end;
 
 procedure TRESTDWRecord.clearRecInfo;
 var
-  p : integer;
+  vRecSize : integer;
   vRecInfo : PRESTDWRecInfo;
   vBuf : TRESTDWBuffer;
 begin
-  p := FDataset.GetRecordSize;
+  vRecSize := FDataset.GetRecordSize;
   vBuf := TRESTDWBuffer(FBuffer);
-  Inc(vBuf,p);
+  Inc(vBuf,vRecSize);
   Move(vBuf^,vRecInfo,SizeOf(Pointer));
 
   try
     if vRecInfo <> nil then
-      Dispose(vRecInfo);
+      FreeMem(vRecInfo);
   except
     // ja ta limpo
   end;
-  Dec(vBuf,p);
+  Dec(vBuf,vRecSize);
 end;
 
-function TRESTDWRecord.CopyBuffer: Pointer;
+function TRESTDWRecord.CopyBuffer: TRESTDWBuffer;
 begin
-  GetMem(Result,FDataset.FRecordBufferSize);
+  GetMem(Result, FDataset.FRecordBufferSize);
   FillChar(Result^,FDataset.FRecordBufferSize,0);
   Move(FBuffer^,Result^,FDataset.FRecordBufferSize);
 end;
 
-procedure TRESTDWRecord.CopyBuffer(var Buffer: Pointer);
+procedure TRESTDWRecord.CopyBuffer(var Buffer: TRESTDWBuffer);
 begin
   Move(FBuffer^,Buffer^,FDataset.FRecordBufferSize);
 end;
@@ -1957,8 +2415,11 @@ begin
   inherited Create;
   FDataset := AOwner;
   FAccept := 1;
+  FStatus := rsInserted;
+  FID := FDataset.FLastID;
 
-  GetMem(FBuffer,FDataset.FRecordBufferSize);
+  FDataset.FLastID := FDataset.FLastID + 1;
+  GetMem(FBuffer, FDataset.FRecordBufferSize);
   FillChar(FBuffer^,FDataset.FRecordBufferSize,0);
 end;
 
@@ -1967,13 +2428,13 @@ begin
 //  clearRecInfo;
   clearBlobsFields;
   FreeMem(FBuffer);
+  FDataset := nil;
   FBuffer := nil;
-  inherited;
+  inherited Destroy;
 end;
 
-procedure TRESTDWRecord.setBuffer(const Value: Pointer);
+procedure TRESTDWRecord.setBuffer(const Value: TRESTDWBuffer);
 begin
-//  clearRecInfo;
   clearBlobsFields;
   Move(Value^,FBuffer^,FDataset.GetRecordSize);
 end;
@@ -2011,7 +2472,9 @@ end;
 destructor TRESTDWBlobStream.Destroy;
 begin
   SetDataBlob;
-  inherited;
+  FDataset := nil;
+  FField := nil;
+  inherited Destroy;
 end;
 
 procedure TRESTDWBlobStream.FreeBlobField;
@@ -2020,6 +2483,7 @@ begin
   FreeMem(FBlobField^.Buffer, FBlobField^.Size);
   FBlobField^.Buffer := nil;
   FBlobField^.Size := 0;
+  FBlobField := nil;
   FModified := True;
 end;
 
@@ -2030,13 +2494,18 @@ begin
   if FBlobField <> nil then begin
     if FPosition + Count > FBlobField^.Size then
       Count := FBlobField^.Size - FPosition;
-    {$IF (NOT DEFINED(FPC)) and (CompilerVersion < 21)}
-      P := FBlobField.Buffer;
+    {$IF not Defined(RESTDWLAZARUS) AND not Defined(DELPHIXEUP)}
+      P := FBlobField^.Buffer;
       Inc(PByte(P),FPosition);
     {$ELSE}
       P := FBlobField^.Buffer + FPosition;
     {$IFEND}
     Move(P^, Buffer, Count);
+    {$IF not Defined(RESTDWLAZARUS) AND not Defined(DELPHIXEUP)}
+      Dec(PByte(P),FPosition);
+    {$ELSE}
+      P := FBlobField^.Buffer - FPosition;
+    {$IFEND}
     Inc(FPosition, Count);
   end
   else begin
@@ -2073,7 +2542,7 @@ var
   P : Pointer;
 begin
   AllocBlobField(FPosition+Count);
-  {$IF (NOT DEFINED(FPC)) and (CompilerVersion < 21)}
+  {$IF not Defined(RESTDWLAZARUS) AND not Defined(DELPHIXEUP)}
     P := FBlobField^.Buffer;
     Inc(PByte(P),FPosition);
   {$ELSE}
@@ -2081,6 +2550,11 @@ begin
   {$IFEND}
   Move(Buffer, P^, Count);
   Inc(FBlobField^.Size, Count);
+  {$IF not Defined(RESTDWLAZARUS) AND not Defined(DELPHIXEUP)}
+    Dec(PByte(P),FPosition);
+  {$ELSE}
+    P := FBlobField^.Buffer - FPosition;
+  {$IFEND}
   Inc(FPosition, Count);
   Result := Count;
   SetDataBlob;
@@ -2139,14 +2613,16 @@ end;
 
 procedure TRESTDWStorageBase.SaveToFile(ADataset: TDataset; AFileName: String);
 var
-  vFileStream : TFileStream;
+  vFileStream : TBufferedFileStream;
 begin
   try
-    vFileStream := TFileStream.Create(AFileName,fmCreate);
+    vFileStream := TBufferedFileStream.Create(AFileName,fmCreate);
     try
       SaveToStream(ADataset,TStream(vFileStream));
     except
-
+      on e : Exception do begin
+        raise
+      end;
     end;
   finally
     vFileStream.Free;
