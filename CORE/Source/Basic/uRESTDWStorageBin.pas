@@ -153,10 +153,13 @@ begin
   ADataset.Open;
 
   ADataset.DisableControls;
-  for r := 1 to vRecordCount do begin
+  r := 0;
+  While r <=  vRecordCount do //Anderson
+  begin
     ADataset.Append;
     LoadRecordFromStream(ADataset,AStream);
     ADataset.Post;
+    inc(r);
   end;
 
   ADataset.EnableControls;
@@ -307,7 +310,8 @@ begin
   vFieldCount := Length(FFieldNames);
   vFieldCount := vFieldCount - 1;
 
-  for r := 0 to vRecCount do begin
+  r := 0;
+  while r <= vRecCount do begin        //Anderson
     GetMem(vBuf, IDataset.GetRecordSize);
     clearBuffer;
     vDecBuf := 0;
@@ -421,20 +425,8 @@ begin
           Inc(vBuf,Sizeof(vByte));
           Dec(vBuf,vFieldSize);
         end
-        // 8 - Bytes - Currency
-        else if (vDWFieldType in [dwftCurrency]) then
-        begin
-          AStream.Read(vCurrency, SizeOf(vCurrency));
-          Move(vCurrency,vBuf^,Sizeof(vCurrency));
-        end
-        // 8 - Bytes - Currency
-        else if (vDWFieldType in [dwftBCD]) then
-        begin
-          AStream.Read(vCurrency, SizeOf(vCurrency));
-          Move(vCurrency,vBuf^,Sizeof(vCurrency));
-        end
-        // 8 - Bytes - Currency
-        else if (vDWFieldType in [dwftFMTBcd]) then
+        // 8 - Bytes - Currency/BCD
+        else if (vDWFieldType in [dwftCurrency,dwftBCD,dwftFMTBcd]) then
         begin
           AStream.Read(vCurrency, SizeOf(vCurrency));
           Move(vCurrency,vBuf^,Sizeof(vCurrency));
@@ -456,13 +448,14 @@ begin
               if EncodeStrs then
                 vString := DecodeStrings(vString);
             {$ENDIF}
-            vInt64 := Length(vString) * SizeOf(WideChar);
-            vInt64 := vInt64 + 1;
-            vBlobField := New(PRESTDWBlobField);
+            vInt64 := Length(widestring(Vstring)) * SizeOf(WideChar);
+            //vInt64 := vInt64 + 1;
+            vBlobField :=  New(PRESTDWBlobField);
             FillChar(vBlobField^, SizeOf(TRESTDWBlobField), 0);
             vBlobField^.Size := vInt64;
-            ReAllocMem(vBlobField^.Buffer, vInt64);
-            Move(WideString(vString)[InitStrPos], vBlobField^.Buffer^, vInt64);
+            ReallocMem(vBlobField^.Buffer, vInt64);
+            Move(widestring(Vstring)[InitStrPos], vBlobField^.Buffer^, vInt64);
+
             Move(vBlobField,vBuf^,SizeOf(Pointer));
             IDataset.AddBlobList(vBlobField);
           end;
@@ -490,6 +483,7 @@ begin
             vBlobField^.Size := vInt64;
             ReAllocMem(vBlobField^.Buffer, vInt64);
             Move(vString[InitStrPos], vBlobField^.Buffer^, vInt64);
+
             Move(vBlobField,vBuf^,SizeOf(Pointer));
             IDataset.AddBlobList(vBlobField);
           end;
@@ -543,6 +537,7 @@ begin
     vRec.Buffer := vBuf;
     Freemem(vBuf);
     IDataset.AddNewRecord(vRec);
+    inc(r);
   end;
 end;
 
@@ -1026,23 +1021,11 @@ Begin
               Dec(vBuf,vFieldSize);
             end
         {$ENDIF}
-        // 8 - Bytes - Currency
-        else if (vDWFieldType in [dwftCurrency]) then
+        // 8 - Bytes - Currency/BCD
+        else if (vDWFieldType in [dwftCurrency,dwftBCD,dwftFMTBcd]) then
         begin
           Move(vBuf^,vCurrency,Sizeof(vCurrency));
           AStream.Write(vCurrency, Sizeof(vCurrency));
-        end
-        // 8 - Bytes - Currency
-        else if (vDWFieldType in [dwftBCD]) then
-        begin
-          Move(vBuf^,vDouble,Sizeof(vDouble));
-          AStream.Write(vDouble, Sizeof(vDouble));
-        end
-        // 8 - Bytes - Currency
-        else if (vDWFieldType in [dwftFMTBcd]) then
-        begin
-          Move(vBuf^,vDouble,Sizeof(vDouble));
-          AStream.Write(vDouble, Sizeof(vDouble));
         end
         // N Bytes - Blobs
         else if (vDWFieldType in [dwftStream,dwftBlob,dwftBytes,dwftWideMemo,

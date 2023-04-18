@@ -1050,7 +1050,7 @@ begin
 
       vDWDataType := FieldTypeToDWFieldType(Field.DataType);
 
-      if vDWDataType = dwftFMTBcd then begin
+      if vDWDataType in [dwftBCD, dwftFMTBcd] then begin
         Move(SrcBuffer^,vCurrency,J);
         vFmtBCD := DoubleToBCD(vCurrency);
         Move(vFmtBCD,Buffer^,J);
@@ -1202,7 +1202,7 @@ begin
       if vDWDataType in [dwftWideString, dwftFixedWideChar, dwftFixedChar, dwftString] then
         Dec(J);
 
-      if vDWDataType = dwftFMTBcd then begin
+      if vDWDataType in [dwftBCD, dwftFMTBcd] then begin
         Move(Buffer^,vFmtBCD,SizeOf(tBCD));
         vCurrency := BCDToDouble(vFmtBCD);
         Move(vCurrency,DestBuffer^,J);
@@ -2314,6 +2314,12 @@ begin
   end
   else begin
     // always append
+
+    if state = dsinsert then
+    Begin
+        InternalAddRecord(ActiveBuffer,True);
+    End
+    else
     InternalAddRecord(ActiveBuffer, FCurrentRecord >= FRecords.Count);
   end;
 end;
@@ -2483,6 +2489,7 @@ begin
   FreeMem(FBlobField^.Buffer, FBlobField^.Size);
   FBlobField^.Buffer := nil;
   FBlobField^.Size := 0;
+  FreeMem(FBlobField, SizeOf(TRESTDWBlobField));
   FBlobField := nil;
   FModified := True;
 end;
@@ -2613,10 +2620,11 @@ end;
 
 procedure TRESTDWStorageBase.SaveToFile(ADataset: TDataset; AFileName: String);
 var
-  vFileStream : TBufferedFileStream;
+  // TODO -o Analisar TBufferedFileStream
+  vFileStream : TFileStream;
 begin
   try
-    vFileStream := TBufferedFileStream.Create(AFileName,fmCreate);
+    vFileStream := TFileStream.Create(AFileName,fmCreate);
     try
       SaveToStream(ADataset,TStream(vFileStream));
     except
