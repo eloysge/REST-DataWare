@@ -30,7 +30,6 @@ package RESTDWCore;
 {$IMPLICITBUILD OFF}
 
 requires
-  dcldb,
   {$IF Defined(VER150)}
   bdertl,
   {$IFEND}
@@ -84,14 +83,11 @@ contains
   uRESTDWDataUtils in '..\..\Source\Basic\Mechanics\uRESTDWDataUtils.pas',
   StringBuilderUnit in '..\..\Source\utils\StringBuilderUnit.pas',
   uRESTDWBase64 in '..\..\Source\utils\uRESTDWBase64.pas',
-  uRESTDWDynamic in '..\..\Source\utils\uRESTDWDynamic.pas',
   uRESTDWJSONObject in '..\..\Source\utils\uRESTDWJSONObject.pas',
   uRESTDWMassiveBuffer in '..\..\Source\utils\uRESTDWMassiveBuffer.pas',
   uRESTDWMD5 in '..\..\Source\utils\uRESTDWMD5.pas',
-  uRESTDWTools in '..\..\Source\utils\uRESTDWTools.pas',
   uRESTDWZlib in '..\..\Source\utils\uRESTDWZlib.pas',
   uRESTDWDataJSON in '..\..\Source\utils\JSON\uRESTDWDataJSON.pas',
-  uRESTDWDynArray in '..\..\Source\utils\JSON\uRESTDWDynArray.pas',
   uRESTDWJSON in '..\..\Source\utils\JSON\uRESTDWJSON.pas',
   uRESTDWJSONInterface in '..\..\Source\utils\JSON\uRESTDWJSONInterface.pas',
   uRESTDWSerialize in '..\..\Source\utils\JSON\uRESTDWSerialize.pas',
@@ -100,26 +96,12 @@ contains
   uRESTDWURLFunctions in '..\..\Source\utils\uRESTDWURLFunctions.pas',
   uRESTDWPropertyPersist in '..\..\Source\Basic\uRESTDWPropertyPersist.pas',
   uRESTDWStorageBin in '..\..\Source\Basic\uRESTDWStorageBin.pas',
-  uRESTDWMemAnsiStrings in '..\..\Source\Plugins\Memdataset\uRESTDWMemAnsiStrings.pas',
-  uRESTDWMemBase in '..\..\Source\Plugins\Memdataset\uRESTDWMemBase.pas',
-  uRESTDWMemCharsets in '..\..\Source\Plugins\Memdataset\uRESTDWMemCharsets.pas',
-  uRESTDWMemConsts in '..\..\Source\Plugins\Memdataset\uRESTDWMemConsts.pas',
-  uRESTDWMemDateTime in '..\..\Source\Plugins\Memdataset\uRESTDWMemDateTime.pas',
-  uRESTDWMemDBFilterExpr in '..\..\Source\Plugins\Memdataset\uRESTDWMemDBFilterExpr.pas',
-  uRESTDWMemDBUtils in '..\..\Source\Plugins\Memdataset\uRESTDWMemDBUtils.pas',
-  uRESTDWMemExprParser in '..\..\Source\Plugins\Memdataset\uRESTDWMemExprParser.pas',
-  uRESTDWMemMath in '..\..\Source\Plugins\Memdataset\uRESTDWMemMath.pas',
   uRESTDWMemoryDataset in '..\..\Source\Plugins\Memdataset\uRESTDWMemoryDataset.pas',
-  uRESTDWMemResources in '..\..\Source\Plugins\Memdataset\uRESTDWMemResources.pas',
-  uRESTDWMemStreams in '..\..\Source\Plugins\Memdataset\uRESTDWMemStreams.pas',
-  uRESTDWMemStringConversions in '..\..\Source\Plugins\Memdataset\uRESTDWMemStringConversions.pas',
-  uRESTDWMemStrings in '..\..\Source\Plugins\Memdataset\uRESTDWMemStrings.pas',
-  uRESTDWMemStringsB in '..\..\Source\Plugins\Memdataset\uRESTDWMemStringsB.pas',
-  uRESTDWMemTranslateString in '..\..\Source\Plugins\Memdataset\uRESTDWMemTranslateString.pas',
-  uRESTDWMemTypes in '..\..\Source\Plugins\Memdataset\uRESTDWMemTypes.pas',
-  uRESTDWMemUnicode in '..\..\Source\Plugins\Memdataset\uRESTDWMemUnicode.pas',
-  uRESTDWMemVCLUtils in '..\..\Source\Plugins\Memdataset\uRESTDWMemVCLUtils.pas',
-  uRESTDWMemWideStrings in '..\..\Source\Plugins\Memdataset\uRESTDWMemWideStrings.pas',
-  uRESTDWProtoTypes in '..\..\Source\Basic\uRESTDWProtoTypes.pas';
+  uRESTDWProtoTypes in '..\..\Source\Basic\uRESTDWProtoTypes.pas',
+  uRESTDWExprParser in '..\..\Source\Plugins\Memdataset\uRESTDWExprParser.pas',
+  uRESTDWDriverBase in '..\..\Source\Database_Drivers\uRESTDWDriverBase.pas',
+  uRESTDWTools in '..\..\Source\utils\uRESTDWTools.pas',
+  uRESTDWAuthenticators in '..\..\Source\Basic\Mechanics\uRESTDWAuthenticators.pas',
+  uRESTDWDynamic in '..\..\Source\utils\uRESTDWDynamic.pas';
 
 End.

@@ -1,6 +1,6 @@
 unit uRESTDWBasicClass;
 
-{$I ..\..\Source\Includes\uRESTDWPlataform.inc}
+{$I ..\..\Source\Includes\uRESTDW.inc}
 
 {
   REST Dataware .
@@ -222,38 +222,22 @@ implementation
 
 Procedure TRESTDWClientRESTBase.SetOnWork(Value : TOnWork);
 Begin
- {$IFDEF FPC}
-  vOnWork            := Value;
- {$ELSE}
-  vOnWork            := Value;
- {$ENDIF}
+  vOnWork := Value;
 End;
 
 Procedure TRESTDWClientRESTBase.SetOnWorkBegin(Value: TOnWork);
 Begin
- {$IFDEF FPC}
-  vOnWorkBegin            := Value;
- {$ELSE}
-  vOnWorkBegin            := Value;
- {$ENDIF}
+  vOnWorkBegin := Value;
 End;
 
 procedure TRESTDWClientRESTBase.SetOnWorkEnd(Value: TOnWorkEnd);
 begin
- {$IFDEF FPC}
-  vOnWorkEnd            := Value;
- {$ELSE}
-  vOnWorkEnd            := Value;
- {$ENDIF}
+  vOnWorkEnd := Value;
 end;
 
 procedure TRESTDWClientRESTBase.SetOnStatus(Value: TOnStatus);
 begin
- {$IFDEF FPC}
-  vOnStatus            := Value;
- {$ELSE}
-  vOnStatus            := Value;
- {$ENDIF}
+  vOnStatus := Value;
 end;
 
 Procedure TRESTDWClientRESTBase.SetAllowCookies(Value : Boolean);
@@ -289,9 +273,9 @@ End;
 Constructor TRESTDWClientRESTBase.Create(AOwner: TComponent);
 Begin
  Inherited;
- vContentType                    := 'application/json';
- vContentEncoding                := 'multipart/form-data';
- vAccept                         := 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
+ vContentType                    := cDefaultContentType;
+ vContentEncoding                := cContentTypeMultiPart;
+ vAccept                         := cDefaultAccept;
  vAcceptEncoding                 := '';
  vCharset                        := 'utf8';
  vMaxAuthRetries                 := 0;
@@ -305,15 +289,11 @@ Begin
  vDefaultCustomHeader            := TStringList.Create;
  vLastErrorCode                  := 0;
  vLastErrorMessage               := '';
- {$IFDEF FPC}
+ {$IF Defined(RESTDWLAZARUS) or Defined(DELPHIXEUP)}
   vRSCharset                     := esUtf8;
  {$ELSE}
-   {$IF CompilerVersion < 21}
-    vRSCharset                   := esAnsi;
-   {$ELSE}
-    vRSCharset                   := esUtf8;
-   {$IFEND}
- {$ENDIF}
+  vRSCharset                     := esAnsi;
+ {$IFEND}
  vRequestTimeOut                 := 5000;
  vConnectTimeOut                 := 5000;
 End;

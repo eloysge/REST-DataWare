@@ -24,16 +24,11 @@ uses
   uRESTDWJSONViewer, uRESTDWFieldSourceEditor, uRESTDWSqlEditor, 
   uRESTDWUpdSqlEditor, utemplateproglaz, uRESTDWBufferBase, StringBuilderUnit, 
   uRESTDWBase64, uRESTDWDynamic, uRESTDWJSONObject, uRESTDWMassiveBuffer, 
-  uRESTDWMD5, uRESTDWTools, uRESTDWDataJSON, uRESTDWDynArray, uRESTDWJSON, 
+  uRESTDWMD5, uRESTDWTools, uRESTDWDataJSON, uRESTDWJSON, 
   uRESTDWJSONInterface, uRESTDWSerialize, uRESTDWMimeTypes, uRESTDWAbout, 
-  uRESTDWZlib, uRESTDWMemoryDataset, uRESTDWMemAnsiStrings, uRESTDWMemBase, 
-  uRESTDWMemCharsets, uRESTDWMemConsts, uRESTDWMemDateTime, 
-  uRESTDWMemDBFilterExpr, uRESTDWMemDBUtils, uRESTDWMemExprParser, 
-  uRESTDWMemMath, uRESTDWMemResources, uRESTDWMemStreams, 
-  uRESTDWMemStringConversions, uRESTDWMemStrings, uRESTDWMemStringsB, 
-  uRESTDWMemTranslateString, uRESTDWMemTypes, uRESTDWMemUnicode, 
-  uRESTDWMemVCLUtils, uRESTDWMemWideStrings, uRESTDWDesignReg, 
-  uRESTDWProtoTypes, LazarusPackageIntf;
+  uRESTDWZlib, uRESTDWMemoryDataset, uRESTDWDesignReg, uRESTDWProtoTypes, 
+  uRESTDWSelfSigned, uRESTDWExprParser, uRESTDWAuthenticators, 
+  uRESTDWStorageBin, LazarusPackageIntf;
 
 implementation
 

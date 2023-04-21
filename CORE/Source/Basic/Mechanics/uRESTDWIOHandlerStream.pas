@@ -1,6 +1,6 @@
 unit uRESTDWIOHandlerStream;
 
-{$I ..\..\Source\Includes\uRESTDWPlataform.inc}
+{$I ..\..\Includes\uRESTDW.inc}
 
 {
   REST Dataware .

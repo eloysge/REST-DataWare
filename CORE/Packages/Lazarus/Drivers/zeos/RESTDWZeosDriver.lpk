@@ -4,14 +4,14 @@
     <PathDelim Value="\"/>
     <Name Value="RESTDWZeosDriver"/>
     <Type Value="RunAndDesignTime"/>
-    <Author Value="Gilberto Rocha da Silva"/>
+    <Author Value="OpenSourceCommunityBrasil"/>
     <CompilerOptions>
       <Version Value="11"/>
       <PathDelim Value="\"/>
       <SearchPaths>
-        <IncludeFiles Value="..\..\..\..\Images\icons\components;.."/>
-        <OtherUnitFiles Value="..\..\..\..\Source\Database_Drivers"/>
-        <UnitOutputDirectory Value="..\..\..\..\Source\compiledlaz"/>
+        <IncludeFiles Value="..\..\..\..\Source\Includes"/>
+        <OtherUnitFiles Value="..\..\..\..\Source\Database_Drivers;..\..\..\..\Source\Database_Drivers\ZeosPhysLink"/>
+        <UnitOutputDirectory Value="..\..\..\..\compiledlaz"/>
       </SearchPaths>
       <CodeGeneration>
         <Optimizations>
@@ -23,7 +23,7 @@
 "/>
     <License Value="GPL- 3.0"/>
     <Version Major="2" Minor="1"/>
-    <Files Count="2">
+    <Files Count="10">
       <Item1>
         <Filename Value="..\..\..\..\Source\Database_Drivers\uRESTDWZeosDriver.pas"/>
         <HasRegisterProc Value="True"/>
@@ -33,11 +33,44 @@
         <Filename Value="..\RESTDWLazarusDrivers.lrs"/>
         <Type Value="LRS"/>
       </Item2>
+      <Item3>
+        <Filename Value="..\..\..\..\Source\Database_Drivers\ZeosPhysLink\uRESTDWZAnalyser.pas"/>
+        <UnitName Value="uRESTDWZAnalyser"/>
+      </Item3>
+      <Item4>
+        <Filename Value="..\..\..\..\Source\Database_Drivers\ZeosPhysLink\uRESTDWZDbc.pas"/>
+        <UnitName Value="uRESTDWZDbc"/>
+      </Item4>
+      <Item5>
+        <Filename Value="..\..\..\..\Source\Database_Drivers\ZeosPhysLink\uRESTDWZDbcMetadata.pas"/>
+        <UnitName Value="uRESTDWZDbcMetadata"/>
+      </Item5>
+      <Item6>
+        <Filename Value="..\..\..\..\Source\Database_Drivers\ZeosPhysLink\uRESTDWZDbcResultSet.pas"/>
+        <UnitName Value="uRESTDWZDbcResultSet"/>
+      </Item6>
+      <Item7>
+        <Filename Value="..\..\..\..\Source\Database_Drivers\ZeosPhysLink\uRESTDWZDbcStatement.pas"/>
+        <UnitName Value="uRESTDWZDbcStatement"/>
+      </Item7>
+      <Item8>
+        <Filename Value="..\..\..\..\Source\Database_Drivers\ZeosPhysLink\uRESTDWZeosPhysLink.pas"/>
+        <UnitName Value="uRESTDWZeosPhysLink"/>
+      </Item8>
+      <Item9>
+        <Filename Value="..\..\..\..\Source\Database_Drivers\ZeosPhysLink\uRESTDWZPlainDriver.pas"/>
+        <UnitName Value="uRESTDWZPlainDriver"/>
+      </Item9>
+      <Item10>
+        <Filename Value="..\..\..\..\Source\Database_Drivers\ZeosPhysLink\uRESTDWZToken.pas"/>
+        <UnitName Value="uRESTDWZToken"/>
+      </Item10>
     </Files>
     <CompatibilityMode Value="True"/>
     <RequiredPkgs Count="3">
       <Item1>
         <PackageName Value="zcomponent"/>
+        <MaxVersion Major="7" Minor="9" Valid="True"/>
         <MinVersion Major="7" Minor="2" Valid="True"/>
       </Item1>
       <Item2>

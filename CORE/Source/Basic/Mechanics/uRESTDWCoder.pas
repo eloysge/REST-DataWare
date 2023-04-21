@@ -1,8 +1,6 @@
 unit uRESTDWCoder;
 
-interface
-
-{$I ..\..\Includes\uRESTDWPlataform.inc}
+{$I ..\..\Includes\uRESTDW.inc}
 
 {
   REST Dataware .
@@ -24,6 +22,8 @@ interface
  Eloy                       - Devel.
  Roniery                    - Devel.
 }
+
+interface
 
 uses
   Classes, uRESTDWAbout, uRESTDWProtoTypes, uRESTDWTools;

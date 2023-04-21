@@ -1,6 +1,6 @@
 unit uRESTDWAttachmentFile;
 
-{$I ..\..\Includes\uRESTDWPlataform.inc}
+{$I ..\..\Includes\uRESTDW.inc}
 
 {
   REST Dataware .
@@ -53,12 +53,12 @@ Uses
 Implementation
 
 Uses
-  {$IFDEF USE_VCL_POSIX}
-  Posix.Unistd,
-  {$ENDIF}
-  {$IFDEF WINDOWS}
-   Windows,
-  {$ENDIF}
+//  {$IFDEF USE_VCL_POSIX}
+//  Posix.Unistd,
+//  {$ENDIF}
+//  {$IFDEF WINDOWS}
+//   Windows,
+//  {$ENDIF}
   uRESTDWException,
   uRESTDWMessage,
   uRESTDWConsts,
