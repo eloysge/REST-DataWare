@@ -15,7 +15,6 @@ unit uRESTDWBasicDB;
 
  XyberX (Gilberto Rocha)    - Admin - Criador e Administrador  do pacote.
  Alexandre Abbade           - Admin - Administrador do desenvolvimento de DEMOS, coordenador do Grupo.
- Anderson Fiori             - Admin - Gerencia de Organização dos Projetos
  Flávio Motta               - Member Tester and DEMO Developer.
  Mobius One                 - Devel, Tester and Admin.
  Gustavo                    - Criptografia and Devel.
@@ -8638,13 +8637,13 @@ Begin
   On E : Exception do
    Begin
     If csDesigning in ComponentState Then
-     Raise Exception.Create(Name+': ' + PChar(E.Message))
+     Raise Exception.Create(Name + ': ' + PChar(E.Message))
     Else
      Begin
       If Assigned(vOnGetDataError) Then
-       vOnGetDataError(False, Name+': '+E.Message)
+       vOnGetDataError(False, Name + ': '+E.Message)
       Else
-       Raise Exception.Create(PChar(Name+': ' + E.Message));
+       Raise Exception.Create(PChar(Name + ': ' + E.Message));
      End;
    End;
  End;
@@ -9521,11 +9520,7 @@ Begin
  vAbortData            := AbortData;
  vOnThreadRequestError := OnThreadRequestError;
  {$IFNDEF RESTDWLAZARUS}
-  {$If DEFINED(RESTDWFMX)}
- Priority              := 1;
-  {$ELSE}
   Priority              := tpLowest;
-  {$IFEND}
  {$ENDIF}
 End;
 
@@ -9897,15 +9892,15 @@ Begin
   Try
    If JsonValue <> '' Then
     Begin
-     LDataSetList.Encoded  := False;
-     LDataSetList.Encoding := esUtf8;
-     LDataSetList.ServerFieldList := ServerFieldList;
+     LDataSetList.Encoded             := False;
+     LDataSetList.Encoding            := esUtf8;
+     LDataSetList.ServerFieldList     := ServerFieldList;
      {$IFDEF RESTDWLAZARUS}
-      LDataSetList.DatabaseCharSet := DatabaseCharSet;
-      LDataSetList.NewFieldList    := @NewFieldList;
-      LDataSetList.CreateDataSet   := @CreateDataSet;
-      LDataSetList.NewDataField    := @NewDataField;
-      LDataSetList.SetInitDataset  := @SetInitDataset;
+      LDataSetList.DatabaseCharSet    := DatabaseCharSet;
+      LDataSetList.NewFieldList       := @NewFieldList;
+      LDataSetList.CreateDataSet      := @CreateDataSet;
+      LDataSetList.NewDataField       := @NewDataField;
+      LDataSetList.SetInitDataset     := @SetInitDataset;
       LDataSetList.SetRecordCount     := @SetRecordCount;
       LDataSetList.Setnotrepage       := @Setnotrepage;
       LDataSetList.SetInDesignEvents  := @SetInDesignEvents;
@@ -9915,10 +9910,10 @@ Begin
       LDataSetList.PrepareDetailsNew  := @PrepareDetailsNew;
       LDataSetList.PrepareDetails     := @PrepareDetails;
      {$ELSE}
-      LDataSetList.NewFieldList    := NewFieldList;
-      LDataSetList.CreateDataSet   := CreateDataSet;
-      LDataSetList.NewDataField    := NewDataField;
-      LDataSetList.SetInitDataset  := SetInitDataset;
+      LDataSetList.NewFieldList       := NewFieldList;
+      LDataSetList.CreateDataSet      := CreateDataSet;
+      LDataSetList.NewDataField       := NewDataField;
+      LDataSetList.SetInitDataset     := SetInitDataset;
       LDataSetList.SetRecordCount     := SetRecordCount;
       LDataSetList.Setnotrepage       := Setnotrepage;
       LDataSetList.SetInDesignEvents  := SetInDesignEvents;
@@ -9928,10 +9923,10 @@ Begin
       LDataSetList.PrepareDetailsNew  := PrepareDetailsNew;
       LDataSetList.PrepareDetails     := PrepareDetails;
      {$ENDIF}
-     LDataSetList.Utf8SpecialChars := Utf8SpecialChars;
+     LDataSetList.Utf8SpecialChars    := Utf8SpecialChars;
      Try
-      LDataSetList.OnWriterProcess := OnWriterProcess;
-      LDataSetList.Utf8SpecialChars := True;
+      LDataSetList.OnWriterProcess    := OnWriterProcess;
+      LDataSetList.Utf8SpecialChars   := True;
       LDataSetList.WriteToDataset(JsonValue, Self, oDWResponseTranslator, rtJSONAll);
       Result := True;
      Except
